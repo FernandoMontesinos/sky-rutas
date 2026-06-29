@@ -28,7 +28,10 @@ function OrderCard({ o }: { o: OrderWithNames }) {
             <TypeBadge tipo={o.tipo} />
             <ModalidadBadge modalidad={o.modalidad} />
           </div>
-          <div className="mt-0.5 truncate text-xs text-gray-500">
+          {o.cliente && (
+            <div className="mt-0.5 truncate text-xs font-medium text-gray-700">{o.cliente}</div>
+          )}
+          <div className="truncate text-xs text-gray-500">
             {o.repartidor ? `🚚 ${o.repartidor.full_name}` : o.creador ? `por ${o.creador.full_name}` : ""}
           </div>
         </div>
@@ -80,12 +83,15 @@ export default async function OrdenesPage() {
     .in("estado", ["pendiente", "asignado"])
     .order("created_at", { ascending: false });
 
+  // Solo completadas de los últimos 2 días para no sobrecargar el tablero.
+  const desde2dias = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
   let completadas = supabase
     .from("orders")
     .select(SELECT)
     .eq("estado", "completado")
+    .gte("completed_at", desde2dias)
     .order("completed_at", { ascending: false })
-    .limit(50);
+    .limit(100);
 
   if (isRepartidor) {
     activas = activas.eq("assigned_to", userId);
@@ -118,13 +124,13 @@ export default async function OrdenesPage() {
         {isRepartidor ? (
           <>
             <Column title="Por hacer" color="bg-amber-500" orders={byEstado("asignado")} />
-            <Column title="Completadas" color="bg-green-500" orders={completadasList} />
+            <Column title="Completadas · 2 días" color="bg-green-500" orders={completadasList} />
           </>
         ) : (
           <>
             <Column title="Pendientes" color="bg-gray-400" orders={byEstado("pendiente")} />
             <Column title="Asignadas" color="bg-amber-500" orders={byEstado("asignado")} />
-            <Column title="Completadas" color="bg-green-500" orders={completadasList} />
+            <Column title="Completadas · 2 días" color="bg-green-500" orders={completadasList} />
           </>
         )}
       </div>

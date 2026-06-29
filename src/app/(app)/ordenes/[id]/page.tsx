@@ -81,6 +81,10 @@ export default async function OrdenDetallePage({
 
       {/* Datos */}
       <dl className="grid grid-cols-2 gap-3 rounded-2xl bg-white p-4 text-sm shadow-sm">
+        <div className="col-span-2">
+          <dt className="text-gray-400">Cliente / Proveedor</dt>
+          <dd className="font-medium text-gray-800">{order.cliente || "—"}</dd>
+        </div>
         <div>
           <dt className="text-gray-400">Creada por</dt>
           <dd className="font-medium text-gray-800">{order.creador?.full_name ?? "—"}</dd>

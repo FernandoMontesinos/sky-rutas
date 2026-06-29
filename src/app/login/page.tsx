@@ -10,10 +10,9 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-gray-800 px-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-xl">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-brand text-2xl font-black text-white">
-            SH
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">SkyHigh Rutas</h1>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="SkyHigh" className="mx-auto mb-3 h-12 w-auto" />
+          <h1 className="text-xl font-bold text-gray-900">Rutas</h1>
           <p className="text-sm text-gray-500">Inicia sesión para continuar</p>
         </div>
 

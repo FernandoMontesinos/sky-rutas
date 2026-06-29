@@ -14,6 +14,7 @@ export type Profile = {
 export type Order = {
   id: string;
   numero_pedido: string;
+  cliente: string | null;
   tipo: OrderType;
   estado: OrderStatus;
   modalidad: Modalidad;

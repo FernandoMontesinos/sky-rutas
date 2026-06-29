@@ -11,6 +11,7 @@ const NAV: NavItem[] = [
   { href: "/ordenes/nueva", label: "Nueva orden", roles: ["admin", "vendedor"] },
   { href: "/ordenes", label: "Órdenes", roles: ["admin", "vendedor", "almacen", "repartidor"] },
   { href: "/mapa", label: "Mapa", roles: ["admin", "almacen"] },
+  { href: "/reportes", label: "Reportes", roles: ["admin", "almacen"] },
   { href: "/admin/usuarios", label: "Usuarios", roles: ["admin"] },
 ];
 
@@ -27,10 +28,9 @@ export default async function AppLayout({
       <header className="sticky top-0 z-10 border-b border-gray-200 bg-white shadow-sm">
         <div className="mx-auto flex max-w-4xl items-center gap-3 px-4 py-3">
           <Link href="/" className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-sm font-black text-white">
-              SH
-            </span>
-            <span className="font-bold text-gray-900">SkyHigh Rutas</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.svg" alt="SkyHigh" className="h-8 w-auto" />
+            <span className="text-sm font-semibold text-gray-400">Rutas</span>
           </Link>
 
           <div className="ml-auto flex items-center gap-3 text-sm">

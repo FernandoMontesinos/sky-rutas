@@ -21,6 +21,7 @@ export async function createOrder(
   const { userId } = await requireRole(["vendedor", "admin"]);
 
   const numero = String(formData.get("numero_pedido") ?? "").trim();
+  const cliente = String(formData.get("cliente") ?? "").trim() || null;
   const tipo = String(formData.get("tipo") ?? "");
   const nota = String(formData.get("nota") ?? "").trim() || null;
   const imagen = formData.get("imagen") as File | null;
@@ -43,6 +44,7 @@ export async function createOrder(
 
   const { error: insErr } = await supabase.from("orders").insert({
     numero_pedido: numero,
+    cliente,
     tipo,
     nota,
     imagen_url: pub.publicUrl,
