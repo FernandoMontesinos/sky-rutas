@@ -29,7 +29,7 @@ export default async function AppLayout({
         <div className="mx-auto flex max-w-4xl items-center gap-3 px-4 py-3">
           <Link href="/" className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.svg" alt="SkyHigh" className="h-8 w-auto" />
+            <img src="/logo.png" alt="SkyHigh" className="h-8 w-auto" />
             <span className="text-sm font-semibold text-gray-400">Rutas</span>
           </Link>
 
