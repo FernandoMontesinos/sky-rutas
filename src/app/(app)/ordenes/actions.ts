@@ -85,12 +85,36 @@ export async function assignOrder(formData: FormData): Promise<void> {
   revalidatePath("/ordenes");
 }
 
-/** Repartidor/Admin sube la foto de la guía y marca la orden como completada. */
+/** Almacén/Admin fija la modalidad de entrega (reparto / oficina / courier). */
+export async function updateModalidad(formData: FormData): Promise<void> {
+  await requireRole(["almacen", "admin"]);
+
+  const orderId = String(formData.get("order_id") ?? "");
+  const modalidad = String(formData.get("modalidad") ?? "");
+  const tracking = String(formData.get("courier_tracking") ?? "").trim() || null;
+  if (!orderId) return;
+  if (!["reparto", "oficina", "courier"].includes(modalidad)) return;
+
+  const supabase = await createClient();
+  await supabase
+    .from("orders")
+    .update({
+      modalidad,
+      courier_tracking: modalidad === "courier" ? tracking : null,
+    })
+    .eq("id", orderId);
+
+  revalidatePath(`/ordenes/${orderId}`);
+  revalidatePath("/ordenes");
+}
+
+/** Sube la foto de la guía/comprobante y marca la orden como completada.
+ *  Repartidor: solo sus órdenes. Almacén/Admin: cualquiera (oficina/courier). */
 export async function completeOrder(
   _prev: FormResult,
   formData: FormData
 ): Promise<FormResult> {
-  await requireRole(["repartidor", "admin"]);
+  await requireRole(["repartidor", "almacen", "admin"]);
 
   const orderId = String(formData.get("order_id") ?? "");
   const guia = formData.get("guia") as File | null;

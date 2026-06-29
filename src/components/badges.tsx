@@ -1,6 +1,8 @@
 import {
+  MODALIDAD_SHORT,
   STATUS_LABEL,
   TYPE_LABEL,
+  type Modalidad,
   type OrderStatus,
   type OrderType,
 } from "@/lib/types";
@@ -26,6 +28,24 @@ export function TypeBadge({ tipo }: { tipo: OrderType }) {
   return (
     <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold uppercase ${styles[tipo]}`}>
       {TYPE_LABEL[tipo]}
+    </span>
+  );
+}
+
+export function ModalidadBadge({ modalidad }: { modalidad: Modalidad }) {
+  const styles: Record<Modalidad, string> = {
+    reparto: "bg-blue-100 text-blue-800",
+    oficina: "bg-purple-100 text-purple-800",
+    courier: "bg-orange-100 text-orange-800",
+  };
+  const icon: Record<Modalidad, string> = {
+    reparto: "🚚",
+    oficina: "🏢",
+    courier: "📦",
+  };
+  return (
+    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${styles[modalidad]}`}>
+      {icon[modalidad]} {MODALIDAD_SHORT[modalidad]}
     </span>
   );
 }

@@ -2,10 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { StatusBadge, TypeBadge } from "@/components/badges";
-import { assignOrder, deleteOrder } from "../actions";
+import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
+import { assignOrder, deleteOrder, updateModalidad } from "../actions";
 import CompletarForm from "./completar";
-import type { OrderWithNames, Profile } from "@/lib/types";
+import { MODALIDAD_LABEL, type Modalidad, type OrderWithNames, type Profile } from "@/lib/types";
 
 const SELECT =
   "*, creador:profiles!orders_created_by_fkey(full_name), repartidor:profiles!orders_assigned_to_fkey(full_name)";
@@ -35,9 +35,12 @@ export default async function OrdenDetallePage({
 
   const canAssign = profile.role === "admin" || profile.role === "almacen";
   const isMine = order.assigned_to === userId;
+  const isRepartidor = profile.role === "repartidor";
   const canComplete =
     order.estado !== "completado" &&
-    (profile.role === "admin" || (profile.role === "repartidor" && isMine));
+    (profile.role === "admin" ||
+      profile.role === "almacen" ||
+      (isRepartidor && isMine));
 
   let repartidores: Profile[] = [];
   if (canAssign) {
@@ -59,6 +62,7 @@ export default async function OrdenDetallePage({
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-bold text-gray-900">#{order.numero_pedido}</h1>
         <TypeBadge tipo={order.tipo} />
+        <ModalidadBadge modalidad={order.modalidad} />
         <StatusBadge estado={order.estado} />
       </div>
 
@@ -93,6 +97,16 @@ export default async function OrdenDetallePage({
           <dt className="text-gray-400">Completada</dt>
           <dd className="font-medium text-gray-800">{fmt(order.completed_at) ?? "—"}</dd>
         </div>
+        <div>
+          <dt className="text-gray-400">Modalidad</dt>
+          <dd className="font-medium text-gray-800">{MODALIDAD_LABEL[order.modalidad]}</dd>
+        </div>
+        {order.courier_tracking && (
+          <div>
+            <dt className="text-gray-400">Tracking courier</dt>
+            <dd className="font-medium text-gray-800">{order.courier_tracking}</dd>
+          </div>
+        )}
         {order.nota && (
           <div className="col-span-2">
             <dt className="text-gray-400">Nota</dt>
@@ -100,6 +114,40 @@ export default async function OrdenDetallePage({
           </div>
         )}
       </dl>
+
+      {/* Modalidad (almacén/admin) */}
+      {canAssign && order.estado !== "completado" && (
+        <form action={updateModalidad} className="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
+          <input type="hidden" name="order_id" value={order.id} />
+          <label htmlFor="modalidad" className="block text-sm font-medium text-gray-700">
+            Modalidad de entrega
+          </label>
+          <select
+            id="modalidad"
+            name="modalidad"
+            defaultValue={order.modalidad}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand"
+          >
+            {(["reparto", "oficina", "courier"] as Modalidad[]).map((m) => (
+              <option key={m} value={m}>
+                {MODALIDAD_LABEL[m]}
+              </option>
+            ))}
+          </select>
+          <input
+            name="courier_tracking"
+            defaultValue={order.courier_tracking ?? ""}
+            placeholder="N° de tracking (solo si es Courier)"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand"
+          />
+          <button
+            type="submit"
+            className="rounded-lg bg-brand px-4 py-2 font-semibold text-white transition hover:bg-brand-dark"
+          >
+            Guardar modalidad
+          </button>
+        </form>
+      )}
 
       {/* Asignar (almacén/admin) */}
       {canAssign && order.estado !== "completado" && (
@@ -137,14 +185,16 @@ export default async function OrdenDetallePage({
         </form>
       )}
 
-      {/* Completar (repartidor/admin) */}
-      {canComplete && order.assigned_to && (
+      {/* Completar:
+          - repartidor: solo si la orden es suya (asignada)
+          - almacén/admin: siempre (incluye oficina y courier) */}
+      {canComplete && (isRepartidor ? order.assigned_to : true) && (
         <CompletarForm orderId={order.id} tipo={order.tipo} />
       )}
 
-      {canComplete && !order.assigned_to && profile.role === "repartidor" && (
+      {isRepartidor && order.estado !== "completado" && !isMine && (
         <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
-          Esta orden aún no está asignada.
+          Esta orden aún no está asignada a ti.
         </p>
       )}
 

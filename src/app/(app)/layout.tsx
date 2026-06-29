@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { ROLE_LABEL, type UserRole } from "@/lib/types";
+import { LocationSharer } from "@/components/location-sharer";
 import { signOut } from "./actions";
 
 type NavItem = { href: string; label: string; roles: UserRole[] };
@@ -58,6 +59,12 @@ export default async function AppLayout({
             </Link>
           ))}
         </nav>
+
+        {profile.role === "repartidor" && (
+          <div className="mx-auto max-w-4xl px-4 pb-2">
+            <LocationSharer />
+          </div>
+        )}
       </header>
 
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6">{children}</main>

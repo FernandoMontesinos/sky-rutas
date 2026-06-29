@@ -1,6 +1,7 @@
 export type UserRole = "admin" | "vendedor" | "almacen" | "repartidor";
 export type OrderType = "entrega" | "recojo";
 export type OrderStatus = "pendiente" | "asignado" | "completado";
+export type Modalidad = "reparto" | "oficina" | "courier";
 
 export type Profile = {
   id: string;
@@ -15,6 +16,8 @@ export type Order = {
   numero_pedido: string;
   tipo: OrderType;
   estado: OrderStatus;
+  modalidad: Modalidad;
+  courier_tracking: string | null;
   imagen_url: string | null;
   guia_url: string | null;
   nota: string | null;
@@ -47,4 +50,16 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
 export const TYPE_LABEL: Record<OrderType, string> = {
   entrega: "Entrega",
   recojo: "Recojo",
+};
+
+export const MODALIDAD_LABEL: Record<Modalidad, string> = {
+  reparto: "Reparto (repartidor)",
+  oficina: "Recojo en oficina",
+  courier: "Courier a Lima",
+};
+
+export const MODALIDAD_SHORT: Record<Modalidad, string> = {
+  reparto: "Reparto",
+  oficina: "Oficina",
+  courier: "Courier",
 };

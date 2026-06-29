@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { TypeBadge } from "@/components/badges";
-import { LocationSharer } from "@/components/location-sharer";
+import { ModalidadBadge, TypeBadge } from "@/components/badges";
 import type { OrderStatus, OrderWithNames } from "@/lib/types";
 
 const SELECT =
@@ -24,9 +23,10 @@ function OrderCard({ o }: { o: OrderWithNames }) {
           />
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="truncate font-bold text-gray-900">#{o.numero_pedido}</span>
             <TypeBadge tipo={o.tipo} />
+            <ModalidadBadge modalidad={o.modalidad} />
           </div>
           <div className="mt-0.5 truncate text-xs text-gray-500">
             {o.repartidor ? `🚚 ${o.repartidor.full_name}` : o.creador ? `por ${o.creador.full_name}` : ""}
@@ -113,8 +113,6 @@ export default async function OrdenesPage() {
           </Link>
         )}
       </div>
-
-      {isRepartidor && <LocationSharer />}
 
       <div className="flex gap-3 overflow-x-auto pb-2 sm:overflow-visible">
         {isRepartidor ? (
