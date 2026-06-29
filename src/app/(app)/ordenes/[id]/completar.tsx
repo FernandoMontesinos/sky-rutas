@@ -2,6 +2,7 @@
 
 import { useActionState, useRef, useState, startTransition } from "react";
 import { completeOrder, type FormResult } from "../actions";
+import { compressImage } from "@/lib/compress-image";
 import { TYPE_LABEL, type OrderType } from "@/lib/types";
 
 export default function CompletarForm({
@@ -20,11 +21,12 @@ export default function CompletarForm({
   const [localError, setLocalError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  function applyFile(f: File | null) {
+  async function applyFile(f: File | null) {
     if (!f) return;
     setLocalError(null);
-    setFile(f);
-    setPreview(URL.createObjectURL(f));
+    const compressed = await compressImage(f);
+    setFile(compressed);
+    setPreview(URL.createObjectURL(compressed));
   }
 
   function confirmar() {

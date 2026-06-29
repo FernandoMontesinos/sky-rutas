@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState, startTransition } from "react";
 import { createOrder, type FormResult } from "../actions";
+import { compressImage } from "@/lib/compress-image";
 import type { OrderType } from "@/lib/types";
 
 export default function NuevaOrdenForm() {
@@ -12,15 +13,16 @@ export default function NuevaOrdenForm() {
   const [localError, setLocalError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function applyFile(f: File | null) {
+  async function applyFile(f: File | null) {
     if (!f) return;
     if (!f.type.startsWith("image/")) {
       setLocalError("El archivo debe ser una imagen.");
       return;
     }
     setLocalError(null);
-    setFile(f);
-    setPreview(URL.createObjectURL(f));
+    const compressed = await compressImage(f);
+    setFile(compressed);
+    setPreview(URL.createObjectURL(compressed));
   }
 
   // Permite pegar la imagen con Ctrl+V en cualquier parte de la página.

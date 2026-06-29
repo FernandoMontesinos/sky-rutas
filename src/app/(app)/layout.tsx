@@ -9,6 +9,7 @@ const NAV: NavItem[] = [
   { href: "/", label: "Inicio", roles: ["admin", "vendedor", "almacen", "repartidor"] },
   { href: "/ordenes/nueva", label: "Nueva orden", roles: ["admin", "vendedor"] },
   { href: "/ordenes", label: "Órdenes", roles: ["admin", "vendedor", "almacen", "repartidor"] },
+  { href: "/mapa", label: "Mapa", roles: ["admin", "almacen"] },
   { href: "/admin/usuarios", label: "Usuarios", roles: ["admin"] },
 ];
 
