@@ -31,9 +31,11 @@ export async function login(
       };
     }
     if (msg.includes("api key") || msg.includes("fetch") || msg.includes("failed")) {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      const diag = `URL=${url ? url : "(vacía)"} · anon=${anon ? "ok(" + anon.length + ")" : "(vacía)"}`;
       return {
-        error:
-          "Problema de conexión con Supabase. Revisa las variables NEXT_PUBLIC_SUPABASE_URL y ANON_KEY en Vercel.",
+        error: `Problema de conexión con Supabase. ${diag}. Motivo: ${error.message}`,
       };
     }
     // Cualquier otro caso: mostramos el motivo real para poder diagnosticar.
