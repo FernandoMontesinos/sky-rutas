@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
+import { SubmitButton } from "@/components/submit-button";
 import { assignOrder, deleteOrder, updateModalidad } from "../actions";
 import CompletarForm from "./completar";
 import { MODALIDAD_LABEL, type Modalidad, type OrderWithNames, type Profile } from "@/lib/types";
@@ -55,7 +56,10 @@ export default async function OrdenDetallePage({
 
   return (
     <div className="space-y-5">
-      <Link href="/ordenes" className="text-sm text-gray-500 hover:text-brand">
+      <Link
+        href="/ordenes"
+        className="inline-flex items-center gap-1 py-1 text-sm font-medium text-gray-500 hover:text-brand"
+      >
         ‹ Volver a órdenes
       </Link>
 
@@ -144,12 +148,9 @@ export default async function OrdenDetallePage({
             placeholder="N° de tracking (solo si es Courier)"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand"
           />
-          <button
-            type="submit"
-            className="rounded-lg bg-brand px-4 py-2 font-semibold text-white transition hover:bg-brand-dark"
-          >
+          <SubmitButton className="rounded-lg bg-brand px-4 py-2 font-semibold text-white transition hover:bg-brand-dark">
             Guardar modalidad
-          </button>
+          </SubmitButton>
         </form>
       )}
 
@@ -174,12 +175,9 @@ export default async function OrdenDetallePage({
                 </option>
               ))}
             </select>
-            <button
-              type="submit"
-              className="rounded-lg bg-brand px-4 font-semibold text-white transition hover:bg-brand-dark"
-            >
+            <SubmitButton className="rounded-lg bg-brand px-4 py-2 font-semibold text-white transition hover:bg-brand-dark">
               Guardar
-            </button>
+            </SubmitButton>
           </div>
           {repartidores.length === 0 && (
             <p className="text-xs text-amber-700">

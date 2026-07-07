@@ -28,3 +28,10 @@ select,
 textarea {
   font-size: 16px;
 }
+
+/* Toques móviles: sin resaltado azul al tocar y sin retraso de doble tap */
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}

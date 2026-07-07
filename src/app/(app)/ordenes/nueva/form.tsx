@@ -12,6 +12,7 @@ export default function NuevaOrdenForm() {
   const [tipo, setTipo] = useState<OrderType | "">("");
   const [localError, setLocalError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   async function applyFile(f: File | null) {
     if (!f) return;
@@ -92,21 +93,52 @@ export default function NuevaOrdenForm() {
             </button>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-white px-4 py-10 text-center text-gray-500 transition hover:border-brand hover:text-brand"
-          >
-            <span className="text-3xl">📋</span>
-            <span className="font-medium">Pega la imagen aquí (Ctrl + V)</span>
-            <span className="text-sm">o toca para elegir / tomar una foto</span>
-          </button>
+          <>
+            {/* PC / tablet: zona para pegar con Ctrl+V */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="hidden w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-white px-4 py-10 text-center text-gray-500 transition hover:border-brand hover:text-brand sm:flex"
+            >
+              <span className="text-3xl">📋</span>
+              <span className="font-medium">Pega la imagen aquí (Ctrl + V)</span>
+              <span className="text-sm">o haz clic para elegir un archivo</span>
+            </button>
+
+            {/* Celular: cámara o galería, directo */}
+            <div className="grid grid-cols-2 gap-3 sm:hidden">
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-8 text-center text-gray-600 transition active:border-brand active:text-brand"
+              >
+                <span className="text-3xl">📷</span>
+                <span className="text-sm font-semibold">Tomar foto</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-8 text-center text-gray-600 transition active:border-brand active:text-brand"
+              >
+                <span className="text-3xl">🖼️</span>
+                <span className="text-sm font-semibold">Elegir imagen</span>
+              </button>
+            </div>
+          </>
         )}
 
         <input
           ref={fileInputRef}
           type="file"
           accept="image/*"
+          className="hidden"
+          onChange={(e) => applyFile(e.target.files?.[0] ?? null)}
+        />
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
           className="hidden"
           onChange={(e) => applyFile(e.target.files?.[0] ?? null)}
         />

@@ -22,7 +22,8 @@ export default async function UsuariosPage() {
       <CrearUsuarioForm />
 
       <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[480px] text-sm">
           <thead className="bg-gray-50 text-left text-gray-500">
             <tr>
               <th className="px-4 py-2 font-medium">Nombre</th>
@@ -67,6 +68,7 @@ export default async function UsuariosPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

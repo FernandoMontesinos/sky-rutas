@@ -30,6 +30,16 @@ function fechaLarga(ymd: string) {
   });
 }
 
+/** Rango por defecto del filtro: últimos 2 días en hora de Lima
+ *  (fuera del componente para cumplir la regla de pureza de React). */
+function rangoPorDefecto() {
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const hace2 = new Date(Date.now() - 2 * 86_400_000).toLocaleDateString("en-CA", {
+    timeZone: "America/Lima",
+  });
+  return { hoy, hace2 };
+}
+
 export default async function ReportesPage({
   searchParams,
 }: {
@@ -38,10 +48,7 @@ export default async function ReportesPage({
   await requireRole(["admin", "almacen"]);
   const { desde: spDesde, hasta: spHasta } = await searchParams;
 
-  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
-  const hace2 = new Date(Date.now() - 2 * 86_400_000).toLocaleDateString("en-CA", {
-    timeZone: "America/Lima",
-  });
+  const { hoy, hace2 } = rangoPorDefecto();
   const desde = spDesde || hace2;
   const hasta = spHasta || hoy;
 
@@ -80,7 +87,7 @@ export default async function ReportesPage({
         method="get"
         className="flex flex-wrap items-end gap-3 rounded-2xl bg-white p-4 shadow-sm"
       >
-        <div>
+        <div className="min-w-[140px] flex-1 sm:flex-none">
           <label htmlFor="desde" className="mb-1 block text-sm font-medium text-gray-700">
             Desde
           </label>
@@ -89,10 +96,10 @@ export default async function ReportesPage({
             id="desde"
             name="desde"
             defaultValue={desde}
-            className="rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand"
           />
         </div>
-        <div>
+        <div className="min-w-[140px] flex-1 sm:flex-none">
           <label htmlFor="hasta" className="mb-1 block text-sm font-medium text-gray-700">
             Hasta
           </label>
@@ -101,7 +108,7 @@ export default async function ReportesPage({
             id="hasta"
             name="hasta"
             defaultValue={hasta}
-            className="rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand"
           />
         </div>
         <button
@@ -112,7 +119,7 @@ export default async function ReportesPage({
         </button>
         <a
           href={exportHref}
-          className="ml-auto rounded-lg bg-green-600 px-4 py-2 font-semibold text-white hover:bg-green-700"
+          className="w-full rounded-lg bg-green-600 px-4 py-2 text-center font-semibold text-white hover:bg-green-700 sm:ml-auto sm:w-auto"
         >
           ⬇ Exportar a Excel
         </a>
@@ -133,7 +140,8 @@ export default async function ReportesPage({
               <span className="font-semibold capitalize text-gray-800">{fechaLarga(dia)}</span>
               <span className="text-xs text-gray-500">{porDia.get(dia)!.length} órdenes</span>
             </div>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px] text-sm">
               <thead className="text-left text-gray-400">
                 <tr>
                   <th className="px-4 py-2 font-medium">Cliente / Proveedor</th>
@@ -157,6 +165,7 @@ export default async function ReportesPage({
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         ))
       )}

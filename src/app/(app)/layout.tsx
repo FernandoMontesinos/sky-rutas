@@ -2,17 +2,18 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { ROLE_LABEL, type UserRole } from "@/lib/types";
 import { LocationSharer } from "@/components/location-sharer";
+import { DesktopNav, MobileNav, type NavEntry } from "@/components/app-nav";
 import { signOut } from "./actions";
 
-type NavItem = { href: string; label: string; roles: UserRole[] };
+type NavItem = NavEntry & { roles: UserRole[] };
 
 const NAV: NavItem[] = [
-  { href: "/", label: "Inicio", roles: ["admin", "vendedor", "almacen", "repartidor"] },
-  { href: "/ordenes/nueva", label: "Nueva orden", roles: ["admin", "vendedor"] },
-  { href: "/ordenes", label: "Órdenes", roles: ["admin", "vendedor", "almacen", "repartidor"] },
-  { href: "/mapa", label: "Mapa", roles: ["admin", "almacen"] },
-  { href: "/reportes", label: "Reportes", roles: ["admin", "almacen"] },
-  { href: "/admin/usuarios", label: "Usuarios", roles: ["admin"] },
+  { href: "/", label: "Inicio", icon: "🏠", roles: ["admin", "vendedor", "almacen", "repartidor"] },
+  { href: "/ordenes/nueva", label: "Nueva orden", short: "Nueva", icon: "➕", roles: ["admin", "vendedor"] },
+  { href: "/ordenes", label: "Órdenes", icon: "📋", roles: ["admin", "vendedor", "almacen", "repartidor"] },
+  { href: "/mapa", label: "Mapa", icon: "🗺️", roles: ["admin", "almacen"] },
+  { href: "/reportes", label: "Reportes", icon: "📊", roles: ["admin", "almacen"] },
+  { href: "/admin/usuarios", label: "Usuarios", icon: "👥", roles: ["admin"] },
 ];
 
 export default async function AppLayout({
@@ -33,9 +34,12 @@ export default async function AppLayout({
             <span className="text-sm font-semibold text-gray-400">Rutas</span>
           </Link>
 
-          <div className="ml-auto flex items-center gap-3 text-sm">
-            <span className="hidden text-gray-500 sm:inline">
-              {profile.full_name} · {ROLE_LABEL[profile.role]}
+          <div className="ml-auto flex min-w-0 items-center gap-3 text-sm">
+            <span className="truncate text-gray-500">
+              <span className="max-w-[110px] truncate align-bottom sm:max-w-none">
+                {profile.full_name}
+              </span>
+              <span className="hidden sm:inline"> · {ROLE_LABEL[profile.role]}</span>
             </span>
             <form action={signOut}>
               <button
@@ -48,17 +52,7 @@ export default async function AppLayout({
           </div>
         </div>
 
-        <nav className="mx-auto flex max-w-4xl gap-1 overflow-x-auto px-2 pb-2">
-          {items.map((i) => (
-            <Link
-              key={i.href}
-              href={i.href}
-              className="whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 transition hover:bg-brand/10 hover:text-brand"
-            >
-              {i.label}
-            </Link>
-          ))}
-        </nav>
+        <DesktopNav items={items} />
 
         {profile.role === "repartidor" && (
           <div className="mx-auto max-w-4xl px-4 pb-2">
@@ -67,7 +61,12 @@ export default async function AppLayout({
         )}
       </header>
 
-      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6">{children}</main>
+      {/* pb extra en móvil para que la barra inferior no tape el contenido */}
+      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 pb-24 sm:pb-6">
+        {children}
+      </main>
+
+      <MobileNav items={items} />
     </div>
   );
 }

@@ -7,6 +7,11 @@ import type { OrderStatus, OrderWithNames } from "@/lib/types";
 const SELECT =
   "*, creador:profiles!orders_created_by_fkey(full_name), repartidor:profiles!orders_assigned_to_fkey(full_name)";
 
+/** ISO de hace N días (fuera del componente para cumplir la regla de pureza de React). */
+function isoHaceDias(dias: number) {
+  return new Date(Date.now() - dias * 86_400_000).toISOString();
+}
+
 function OrderCard({ o }: { o: OrderWithNames }) {
   return (
     <Link
@@ -27,6 +32,7 @@ function OrderCard({ o }: { o: OrderWithNames }) {
             <span className="truncate font-bold text-gray-900">#{o.numero_pedido}</span>
             <TypeBadge tipo={o.tipo} />
             <ModalidadBadge modalidad={o.modalidad} />
+            {o.nota && <span title="Tiene nota">📝</span>}
           </div>
           {o.cliente && (
             <div className="mt-0.5 truncate text-xs font-medium text-gray-700">{o.cliente}</div>
@@ -44,13 +50,20 @@ function Column({
   title,
   color,
   orders,
+  fullWidthMobile = false,
 }: {
   title: string;
   color: string;
   orders: OrderWithNames[];
+  /** En móvil ocupa todo el ancho (columnas apiladas) en vez de scroll lateral. */
+  fullWidthMobile?: boolean;
 }) {
   return (
-    <div className="flex w-72 shrink-0 flex-col rounded-2xl bg-gray-100 p-2 sm:w-auto sm:flex-1">
+    <div
+      className={`flex shrink-0 flex-col rounded-2xl bg-gray-100 p-2 sm:w-auto sm:flex-1 ${
+        fullWidthMobile ? "w-full" : "w-72 snap-start"
+      }`}
+    >
       <div className="mb-2 flex items-center justify-between px-1">
         <span className="flex items-center gap-2 font-semibold text-gray-700">
           <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} />
@@ -84,7 +97,7 @@ export default async function OrdenesPage() {
     .order("created_at", { ascending: false });
 
   // Solo completadas de los últimos 2 días para no sobrecargar el tablero.
-  const desde2dias = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+  const desde2dias = isoHaceDias(2);
   let completadas = supabase
     .from("orders")
     .select(SELECT)
@@ -120,20 +133,29 @@ export default async function OrdenesPage() {
         )}
       </div>
 
-      <div className="flex gap-3 overflow-x-auto pb-2 sm:overflow-visible">
-        {isRepartidor ? (
-          <>
-            <Column title="Por hacer" color="bg-amber-500" orders={byEstado("asignado")} />
-            <Column title="Completadas · 2 días" color="bg-green-500" orders={completadasList} />
-          </>
-        ) : (
-          <>
-            <Column title="Pendientes" color="bg-gray-400" orders={byEstado("pendiente")} />
-            <Column title="Asignadas" color="bg-amber-500" orders={byEstado("asignado")} />
-            <Column title="Completadas · 2 días" color="bg-green-500" orders={completadasList} />
-          </>
-        )}
-      </div>
+      {isRepartidor ? (
+        /* Repartidor: columnas apiladas en móvil — su ruta primero, sin scroll lateral */
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Column
+            title="Por hacer"
+            color="bg-amber-500"
+            orders={byEstado("asignado")}
+            fullWidthMobile
+          />
+          <Column
+            title="Completadas · 2 días"
+            color="bg-green-500"
+            orders={completadasList}
+            fullWidthMobile
+          />
+        </div>
+      ) : (
+        <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
+          <Column title="Pendientes" color="bg-gray-400" orders={byEstado("pendiente")} />
+          <Column title="Asignadas" color="bg-amber-500" orders={byEstado("asignado")} />
+          <Column title="Completadas · 2 días" color="bg-green-500" orders={completadasList} />
+        </div>
+      )}
     </div>
   );
 }

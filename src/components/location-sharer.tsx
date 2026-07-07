@@ -41,7 +41,6 @@ export function LocationSharer() {
         watchId.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (denied) {
