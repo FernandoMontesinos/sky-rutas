@@ -7,12 +7,26 @@ import {
   type OrderType,
 } from "@/lib/types";
 
-export function StatusBadge({ estado }: { estado: OrderStatus }) {
+export function StatusBadge({
+  estado,
+  parcial = false,
+}: {
+  estado: OrderStatus;
+  /** Si la orden completada quedó como parcial (falta terminar el resto). */
+  parcial?: boolean;
+}) {
   const styles: Record<OrderStatus, string> = {
     pendiente: "bg-gray-200 text-gray-700",
     asignado: "bg-amber-100 text-amber-800",
     completado: "bg-green-100 text-green-800",
   };
+  if (estado === "completado" && parcial) {
+    return (
+      <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-semibold text-orange-800">
+        Completado (parcial)
+      </span>
+    );
+  }
   return (
     <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${styles[estado]}`}>
       {STATUS_LABEL[estado]}

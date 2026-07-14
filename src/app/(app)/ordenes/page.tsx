@@ -13,25 +13,39 @@ function isoHaceDias(dias: number) {
 }
 
 function OrderCard({ o }: { o: OrderWithNames }) {
+  const imagenes = o.imagenes_urls?.length ? o.imagenes_urls : o.imagen_url ? [o.imagen_url] : [];
+
   return (
     <Link
       href={`/ordenes/${o.id}`}
       className="block rounded-xl border border-gray-200 bg-white p-3 shadow-sm transition hover:border-brand/40 hover:shadow"
     >
       <div className="flex gap-3">
-        {o.imagen_url && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={o.imagen_url}
-            alt=""
-            className="h-12 w-12 shrink-0 rounded-lg border border-gray-100 object-cover"
-          />
+        {imagenes[0] && (
+          <div className="relative h-12 w-12 shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imagenes[0]}
+              alt=""
+              className="h-12 w-12 rounded-lg border border-gray-100 object-cover"
+            />
+            {imagenes.length > 1 && (
+              <span className="absolute -bottom-1 -right-1 rounded-full bg-gray-800 px-1 text-[10px] font-bold text-white">
+                +{imagenes.length - 1}
+              </span>
+            )}
+          </div>
         )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="truncate font-bold text-gray-900">#{o.numero_pedido}</span>
             <TypeBadge tipo={o.tipo} />
             <ModalidadBadge modalidad={o.modalidad} />
+            {o.entrega_parcial && (
+              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-800">
+                Parcial
+              </span>
+            )}
             {o.nota && <span title="Tiene nota">📝</span>}
           </div>
           {o.cliente && (

@@ -7,6 +7,7 @@ type Row = {
   numero_pedido: string;
   tipo: OrderType;
   modalidad: Modalidad;
+  entrega_parcial: boolean;
   completed_at: string | null;
   repartidor: { full_name: string } | null;
 };
@@ -56,7 +57,7 @@ export default async function ReportesPage({
   const { data } = await supabase
     .from("orders")
     .select(
-      "cliente, numero_pedido, tipo, modalidad, completed_at, repartidor:profiles!orders_assigned_to_fkey(full_name)"
+      "cliente, numero_pedido, tipo, modalidad, entrega_parcial, completed_at, repartidor:profiles!orders_assigned_to_fkey(full_name)"
     )
     .eq("estado", "completado")
     .gte("completed_at", `${desde}T00:00:00-05:00`)
@@ -148,6 +149,7 @@ export default async function ReportesPage({
                   <th className="px-4 py-2 font-medium">N° orden</th>
                   <th className="px-4 py-2 font-medium">Tipo</th>
                   <th className="px-4 py-2 font-medium">Modalidad</th>
+                  <th className="px-4 py-2 font-medium">Estado</th>
                   <th className="px-4 py-2 font-medium">Repartidor</th>
                   <th className="px-4 py-2 font-medium">Hora</th>
                 </tr>
@@ -159,6 +161,15 @@ export default async function ReportesPage({
                     <td className="px-4 py-2 text-gray-700">#{r.numero_pedido}</td>
                     <td className="px-4 py-2 text-gray-600">{TYPE_LABEL[r.tipo]}</td>
                     <td className="px-4 py-2 text-gray-600">{MODALIDAD_SHORT[r.modalidad]}</td>
+                    <td className="px-4 py-2 text-gray-600">
+                      {r.entrega_parcial ? (
+                        <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-800">
+                          Parcial
+                        </span>
+                      ) : (
+                        "Completo"
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-gray-600">{r.repartidor?.full_name ?? "—"}</td>
                     <td className="px-4 py-2 text-gray-600">{limaHora(r.completed_at)}</td>
                   </tr>

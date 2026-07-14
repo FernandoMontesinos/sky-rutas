@@ -13,7 +13,27 @@ function extFromType(type: string, fallback: string) {
   return ext === "jpeg" ? "jpg" : ext;
 }
 
-/** Vendedor/Admin crea una orden subiendo la imagen pegada. */
+/** Sube varios archivos a un bucket y devuelve sus URLs públicas, en orden. */
+async function uploadMany(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  bucket: string,
+  folder: string,
+  files: File[]
+): Promise<{ urls: string[]; error?: string }> {
+  const urls: string[] = [];
+  for (const f of files) {
+    const path = `${folder}/${Date.now()}-${urls.length}.${extFromType(f.type, "jpg")}`;
+    const { error } = await supabase.storage
+      .from(bucket)
+      .upload(path, f, { contentType: f.type, upsert: false });
+    if (error) return { urls, error: error.message };
+    const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path);
+    urls.push(pub.publicUrl);
+  }
+  return { urls };
+}
+
+/** Vendedor/Admin crea una orden con una o más imágenes. */
 export async function createOrder(
   _prev: FormResult,
   formData: FormData
@@ -23,31 +43,32 @@ export async function createOrder(
   const numero = String(formData.get("numero_pedido") ?? "").trim();
   const cliente = String(formData.get("cliente") ?? "").trim() || null;
   const tipo = String(formData.get("tipo") ?? "");
+  const modalidad = String(formData.get("modalidad") ?? "reparto");
+  const courierTracking = String(formData.get("courier_tracking") ?? "").trim() || null;
   const nota = String(formData.get("nota") ?? "").trim() || null;
-  const imagen = formData.get("imagen") as File | null;
+  const imagenes = formData.getAll("imagenes").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!numero) return { error: "Ingresa el número de pedido." };
   if (tipo !== "entrega" && tipo !== "recojo")
     return { error: "Selecciona si es ENTREGA o RECOJO." };
-  if (!imagen || imagen.size === 0)
-    return { error: "Agrega la imagen de la orden (pégala o toma una foto)." };
+  if (!["reparto", "oficina", "courier"].includes(modalidad))
+    return { error: "Modalidad de entrega inválida." };
+  if (imagenes.length === 0)
+    return { error: "Agrega al menos una imagen de la orden (pégala o toma una foto)." };
 
   const supabase = await createClient();
-  const path = `${userId}/${Date.now()}.${extFromType(imagen.type, "png")}`;
-
-  const { error: upErr } = await supabase.storage
-    .from("ordenes")
-    .upload(path, imagen, { contentType: imagen.type, upsert: false });
-  if (upErr) return { error: "No se pudo subir la imagen: " + upErr.message };
-
-  const { data: pub } = supabase.storage.from("ordenes").getPublicUrl(path);
+  const { urls, error: upErr } = await uploadMany(supabase, "ordenes", userId, imagenes);
+  if (upErr) return { error: "No se pudo subir la imagen: " + upErr };
 
   const { error: insErr } = await supabase.from("orders").insert({
     numero_pedido: numero,
     cliente,
     tipo,
+    modalidad,
+    courier_tracking: modalidad === "courier" ? courierTracking : null,
     nota,
-    imagen_url: pub.publicUrl,
+    imagen_url: urls[0] ?? null,
+    imagenes_urls: urls,
     created_by: userId,
     estado: "pendiente",
   });
@@ -110,8 +131,9 @@ export async function updateModalidad(formData: FormData): Promise<void> {
   revalidatePath("/ordenes");
 }
 
-/** Sube la foto de la guía/comprobante y marca la orden como completada.
- *  Repartidor: solo sus órdenes. Almacén/Admin: cualquiera (oficina/courier). */
+/** Sube una o más fotos de la guía/comprobante y marca la orden como
+ *  completada (total o parcial). Repartidor: solo sus órdenes propias.
+ *  Almacén/Admin: cualquiera (oficina/courier). */
 export async function completeOrder(
   _prev: FormResult,
   formData: FormData
@@ -119,26 +141,23 @@ export async function completeOrder(
   await requireRole(["repartidor", "almacen", "admin"]);
 
   const orderId = String(formData.get("order_id") ?? "");
-  const guia = formData.get("guia") as File | null;
+  const parcial = String(formData.get("entrega_parcial") ?? "") === "true";
+  const guias = formData.getAll("guias").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!orderId) return { error: "Orden inválida." };
-  if (!guia || guia.size === 0)
-    return { error: "Toma la foto de la guía antes de confirmar." };
+  if (guias.length === 0)
+    return { error: "Toma al menos una foto de la guía antes de confirmar." };
 
   const supabase = await createClient();
-  const path = `${orderId}/${Date.now()}.${extFromType(guia.type, "jpg")}`;
-
-  const { error: upErr } = await supabase.storage
-    .from("guias")
-    .upload(path, guia, { contentType: guia.type, upsert: false });
-  if (upErr) return { error: "No se pudo subir la foto: " + upErr.message };
-
-  const { data: pub } = supabase.storage.from("guias").getPublicUrl(path);
+  const { urls, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
+  if (upErr) return { error: "No se pudo subir la foto: " + upErr };
 
   const { error } = await supabase
     .from("orders")
     .update({
-      guia_url: pub.publicUrl,
+      guia_url: urls[0] ?? null,
+      guias_urls: urls,
+      entrega_parcial: parcial,
       estado: "completado",
       completed_at: new Date().toISOString(),
     })

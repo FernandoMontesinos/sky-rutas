@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
 import { SubmitButton } from "@/components/submit-button";
+import { ImageGallery } from "@/components/image-gallery";
 import { assignOrder, deleteOrder, updateModalidad } from "../actions";
 import CompletarForm from "./completar";
 import { MODALIDAD_LABEL, type Modalidad, type OrderWithNames, type Profile } from "@/lib/types";
@@ -33,6 +34,18 @@ export default async function OrdenDetallePage({
   const { data } = await supabase.from("orders").select(SELECT).eq("id", id).single();
   if (!data) notFound();
   const order = data as unknown as OrderWithNames;
+
+  // Compatibilidad: si una orden vieja no tiene el arreglo poblado, cae al campo único.
+  const imagenesOrden = order.imagenes_urls?.length
+    ? order.imagenes_urls
+    : order.imagen_url
+      ? [order.imagen_url]
+      : [];
+  const imagenesGuia = order.guias_urls?.length
+    ? order.guias_urls
+    : order.guia_url
+      ? [order.guia_url]
+      : [];
 
   const canAssign = profile.role === "admin" || profile.role === "almacen";
   const isMine = order.assigned_to === userId;
@@ -67,26 +80,23 @@ export default async function OrdenDetallePage({
         <h1 className="text-2xl font-bold text-gray-900">#{order.numero_pedido}</h1>
         <TypeBadge tipo={order.tipo} />
         <ModalidadBadge modalidad={order.modalidad} />
-        <StatusBadge estado={order.estado} />
+        <StatusBadge estado={order.estado} parcial={order.entrega_parcial} />
       </div>
 
-      {/* Imagen de la orden */}
-      {order.imagen_url && (
+      {/* Imágenes de la orden */}
+      {imagenesOrden.length > 0 && (
         <div>
-          <h2 className="mb-1 text-sm font-medium text-gray-500">Orden</h2>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={order.imagen_url}
-            alt="Imagen de la orden"
-            className="w-full rounded-xl border border-gray-200 bg-white object-contain"
-          />
+          <h2 className="mb-1 text-sm font-medium text-gray-500">
+            Orden {imagenesOrden.length > 1 && `(${imagenesOrden.length} imágenes)`}
+          </h2>
+          <ImageGallery urls={imagenesOrden} alt="Imagen de la orden" />
         </div>
       )}
 
       {/* Datos */}
       <dl className="grid grid-cols-2 gap-3 rounded-2xl bg-white p-4 text-sm shadow-sm">
         <div className="col-span-2">
-          <dt className="text-gray-400">Cliente / Proveedor</dt>
+          <dt className="text-gray-400">{order.tipo === "recojo" ? "Proveedor" : "Cliente"}</dt>
           <dd className="font-medium text-gray-800">{order.cliente || "—"}</dd>
         </div>
         <div>
@@ -201,15 +211,12 @@ export default async function OrdenDetallePage({
       )}
 
       {/* Guía (cuando ya se completó) */}
-      {order.guia_url && (
+      {imagenesGuia.length > 0 && (
         <div>
-          <h2 className="mb-1 text-sm font-medium text-gray-500">Guía</h2>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={order.guia_url}
-            alt="Foto de la guía"
-            className="w-full rounded-xl border border-gray-200 bg-white object-contain"
-          />
+          <h2 className="mb-1 text-sm font-medium text-gray-500">
+            Guía {imagenesGuia.length > 1 && `(${imagenesGuia.length} fotos)`}
+          </h2>
+          <ImageGallery urls={imagenesGuia} alt="Foto de la guía" />
         </div>
       )}
 

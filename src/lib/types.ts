@@ -21,6 +21,9 @@ export type Order = {
   courier_tracking: string | null;
   imagen_url: string | null;
   guia_url: string | null;
+  imagenes_urls: string[];
+  guias_urls: string[];
+  entrega_parcial: boolean;
   nota: string | null;
   created_by: string | null;
   assigned_to: string | null;

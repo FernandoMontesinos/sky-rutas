@@ -7,6 +7,7 @@ type Row = {
   numero_pedido: string;
   tipo: OrderType;
   modalidad: Modalidad;
+  entrega_parcial: boolean;
   completed_at: string | null;
   repartidor: { full_name: string } | null;
 };
@@ -65,7 +66,7 @@ export async function GET(request: NextRequest) {
   const { data } = await supabase
     .from("orders")
     .select(
-      "cliente, numero_pedido, tipo, modalidad, completed_at, repartidor:profiles!orders_assigned_to_fkey(full_name)"
+      "cliente, numero_pedido, tipo, modalidad, entrega_parcial, completed_at, repartidor:profiles!orders_assigned_to_fkey(full_name)"
     )
     .eq("estado", "completado")
     .gte("completed_at", desdeISO)
@@ -79,6 +80,7 @@ export async function GET(request: NextRequest) {
     "N° de orden / pedido",
     "Tipo",
     "Modalidad",
+    "Estado de entrega",
     "Repartidor",
     "Fecha y hora (completado/recogido)",
   ];
@@ -90,6 +92,7 @@ export async function GET(request: NextRequest) {
         <td>${esc(r.numero_pedido)}</td>
         <td>${esc(TYPE_LABEL[r.tipo])}</td>
         <td>${esc(MODALIDAD_SHORT[r.modalidad])}</td>
+        <td>${esc(r.entrega_parcial ? "Parcial" : "Completo")}</td>
         <td>${esc(r.repartidor?.full_name ?? "")}</td>
         <td>${esc(limaDateTime(r.completed_at))}</td>
       </tr>`
