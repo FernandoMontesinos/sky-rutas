@@ -101,52 +101,52 @@ export default async function OrdenDetallePage({
 
       {/* Datos */}
       <dl className="grid grid-cols-2 gap-3 rounded-2xl bg-white p-4 text-sm shadow-sm">
-        <div className="col-span-2">
+        <div className="col-span-2 min-w-0">
           <dt className="text-gray-400">{order.tipo === "recojo" ? "Proveedor" : "Cliente"}</dt>
-          <dd className="font-medium text-gray-800">{order.cliente || "—"}</dd>
+          <dd className="break-words font-medium text-gray-800">{order.cliente || "—"}</dd>
         </div>
-        <div>
+        <div className="min-w-0">
           <dt className="text-gray-400">Creada por</dt>
-          <dd className="font-medium text-gray-800">{order.creador?.full_name ?? "—"}</dd>
+          <dd className="break-words font-medium text-gray-800">{order.creador?.full_name ?? "—"}</dd>
         </div>
-        <div>
+        <div className="min-w-0">
           <dt className="text-gray-400">Repartidor</dt>
-          <dd className="font-medium text-gray-800">{order.repartidor?.full_name ?? "Sin asignar"}</dd>
+          <dd className="break-words font-medium text-gray-800">{order.repartidor?.full_name ?? "Sin asignar"}</dd>
         </div>
-        <div>
+        <div className="min-w-0">
           <dt className="text-gray-400">Creada</dt>
-          <dd className="font-medium text-gray-800">{fmt(order.created_at)}</dd>
+          <dd className="break-words font-medium text-gray-800">{fmt(order.created_at)}</dd>
         </div>
-        <div>
+        <div className="min-w-0">
           <dt className="text-gray-400">Completada</dt>
-          <dd className="font-medium text-gray-800">{fmt(order.completed_at) ?? "—"}</dd>
+          <dd className="break-words font-medium text-gray-800">{fmt(order.completed_at) ?? "—"}</dd>
         </div>
-        <div>
+        <div className="min-w-0">
           <dt className="text-gray-400">Modalidad</dt>
-          <dd className="font-medium text-gray-800">{MODALIDAD_LABEL[order.modalidad]}</dd>
+          <dd className="break-words font-medium text-gray-800">{MODALIDAD_LABEL[order.modalidad]}</dd>
         </div>
         {order.courier_tracking && (
-          <div>
+          <div className="min-w-0">
             <dt className="text-gray-400">Tracking courier</dt>
-            <dd className="font-medium text-gray-800">{order.courier_tracking}</dd>
+            <dd className="break-words font-medium text-gray-800">{order.courier_tracking}</dd>
           </div>
         )}
         {order.proveedor && (
-          <div>
+          <div className="min-w-0">
             <dt className="text-gray-400">Proveedor (compra asociada)</dt>
-            <dd className="font-medium text-gray-800">{order.proveedor}</dd>
+            <dd className="break-words font-medium text-gray-800">{order.proveedor}</dd>
           </div>
         )}
         {order.numero_pedido_compra && (
-          <div>
+          <div className="min-w-0">
             <dt className="text-gray-400">N° pedido de compra</dt>
-            <dd className="font-medium text-gray-800">{order.numero_pedido_compra}</dd>
+            <dd className="break-words font-medium text-gray-800">{order.numero_pedido_compra}</dd>
           </div>
         )}
         {order.nota && (
-          <div className="col-span-2">
+          <div className="col-span-2 min-w-0">
             <dt className="text-gray-400">Nota</dt>
-            <dd className="font-medium text-gray-800">{order.nota}</dd>
+            <dd className="break-words font-medium text-gray-800">{order.nota}</dd>
           </div>
         )}
       </dl>

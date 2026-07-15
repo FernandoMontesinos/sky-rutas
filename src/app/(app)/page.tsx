@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PackagePlus, PackageCheck, Truck, ClipboardList } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ROLE_LABEL } from "@/lib/types";
@@ -41,8 +42,11 @@ export default async function HomePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">
-          Hola, {profile.full_name.split(" ")[0]} 👋
+        <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900">
+          Hola, {profile.full_name.split(" ")[0]}
+          <span className="inline-block origin-[70%_70%] animate-[wave_1.8s_ease-in-out_1]">
+            👋
+          </span>
         </h1>
         <p className="text-gray-500">{ROLE_LABEL[profile.role]}</p>
       </div>
@@ -60,11 +64,14 @@ export default async function HomePage() {
         {(profile.role === "admin" || profile.role === "vendedor") && (
           <Link
             href="/ordenes/nueva"
-            className="block rounded-2xl bg-brand p-5 font-semibold text-white shadow transition hover:bg-brand-dark"
+            className="flex items-start gap-3 rounded-2xl bg-brand p-5 font-semibold text-white shadow transition hover:bg-brand-dark hover:shadow-md"
           >
-            ➕ Subir nueva orden
-            <span className="mt-1 block text-sm font-normal opacity-90">
-              Pega la imagen de la orden y registra entrega o recojo
+            <PackagePlus className="mt-0.5 h-6 w-6 shrink-0" strokeWidth={2} />
+            <span>
+              Subir nueva orden
+              <span className="mt-1 block text-sm font-normal opacity-90">
+                Pega la imagen de la orden y registra entrega o recojo
+              </span>
             </span>
           </Link>
         )}
@@ -72,11 +79,14 @@ export default async function HomePage() {
         {(profile.role === "admin" || profile.role === "almacen") && (
           <Link
             href="/ordenes?estado=pendiente"
-            className="block rounded-2xl border border-gray-200 bg-white p-5 font-semibold text-gray-900 shadow-sm transition hover:bg-gray-50"
+            className="flex items-start gap-3 rounded-2xl border border-gray-200 bg-white p-5 font-semibold text-gray-900 shadow-sm transition hover:bg-gray-50 hover:shadow"
           >
-            📦 Asignar órdenes a repartidores
-            <span className="mt-1 block text-sm font-normal text-gray-500">
-              {pendientes.count ?? 0} pendiente(s) por asignar
+            <PackageCheck className="mt-0.5 h-6 w-6 shrink-0 text-brand" strokeWidth={2} />
+            <span>
+              Asignar órdenes a repartidores
+              <span className="mt-1 block text-sm font-normal text-gray-500">
+                {pendientes.count ?? 0} pendiente(s) por asignar
+              </span>
             </span>
           </Link>
         )}
@@ -84,20 +94,24 @@ export default async function HomePage() {
         {profile.role === "repartidor" && (
           <Link
             href="/ordenes"
-            className="block rounded-2xl bg-brand p-5 font-semibold text-white shadow transition hover:bg-brand-dark"
+            className="flex items-start gap-3 rounded-2xl bg-brand p-5 font-semibold text-white shadow transition hover:bg-brand-dark hover:shadow-md"
           >
-            🚚 Ver mi ruta del día
-            <span className="mt-1 block text-sm font-normal opacity-90">
-              Entra a cada orden y toma la foto de la guía
+            <Truck className="mt-0.5 h-6 w-6 shrink-0" strokeWidth={2} />
+            <span>
+              Ver mi ruta del día
+              <span className="mt-1 block text-sm font-normal opacity-90">
+                Entra a cada orden y toma la foto de la guía
+              </span>
             </span>
           </Link>
         )}
 
         <Link
           href="/ordenes"
-          className="block rounded-2xl border border-gray-200 bg-white p-5 font-semibold text-gray-900 shadow-sm transition hover:bg-gray-50"
+          className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-5 font-semibold text-gray-900 shadow-sm transition hover:bg-gray-50 hover:shadow"
         >
-          📋 Ver todas las órdenes
+          <ClipboardList className="h-6 w-6 shrink-0 text-brand" strokeWidth={2} />
+          Ver todas las órdenes
         </Link>
       </div>
     </div>

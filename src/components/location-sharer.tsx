@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { MapPin } from "lucide-react";
 import { updateMyLocation } from "@/app/(app)/location-actions";
 
 const MIN_INTERVAL_MS = 20_000; // no enviar más de 1 vez cada 20s
@@ -45,8 +46,9 @@ export function LocationSharer() {
 
   if (denied) {
     return (
-      <div className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
-        📍 Activa el permiso de ubicación en tu navegador para que almacén vea tu posición.
+      <div className="flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
+        <MapPin className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} />
+        Activa el permiso de ubicación en tu navegador para que almacén vea tu posición.
       </div>
     );
   }

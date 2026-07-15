@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { updateModalidad } from "../actions";
+import { SavedIndicator } from "@/components/saved-indicator";
 import { MODALIDAD_LABEL, type Modalidad } from "@/lib/types";
 
 /** Modalidad de entrega con autoguardado (sin botón: se guarda al elegir/salir del campo). */
@@ -61,9 +62,7 @@ export function ModalidadForm({
           className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand"
         />
       )}
-      <p className="h-4 text-xs text-gray-400">
-        {pending ? "Guardando..." : saved ? "✓ Guardado" : ""}
-      </p>
+      <SavedIndicator pending={pending} saved={saved} />
     </div>
   );
 }

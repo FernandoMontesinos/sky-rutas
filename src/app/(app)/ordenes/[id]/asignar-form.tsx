@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { assignOrder } from "../actions";
+import { SavedIndicator } from "@/components/saved-indicator";
 import type { Profile } from "@/lib/types";
 
 /** Asignación a repartidor con autoguardado (sin botón: se guarda al elegir). */
@@ -50,9 +51,7 @@ export function AsignarForm({
           </option>
         ))}
       </select>
-      <p className="h-4 text-xs text-gray-400">
-        {pending ? "Guardando..." : saved ? "✓ Guardado" : ""}
-      </p>
+      <SavedIndicator pending={pending} saved={saved} />
       {repartidores.length === 0 && (
         <p className="text-xs text-amber-700">
           No hay repartidores activos. Crea usuarios con rol repartidor en Usuarios.

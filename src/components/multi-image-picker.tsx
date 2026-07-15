@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { Camera, ImagePlus, ClipboardPaste, X } from "lucide-react";
 import { compressImage } from "@/lib/compress-image";
 
 export type PickedImage = { file: File; preview: string };
@@ -85,9 +86,9 @@ export function MultiImagePicker({
                 type="button"
                 onClick={() => removeAt(i)}
                 aria-label="Quitar imagen"
-                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-xs font-bold text-white"
+                className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-white transition-transform hover:scale-110"
               >
-                ✕
+                <X className="h-3 w-3" strokeWidth={3} />
               </button>
             </div>
           ))}
@@ -99,17 +100,17 @@ export function MultiImagePicker({
         <button
           type="button"
           onClick={() => cameraRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-5 text-center text-gray-600 transition active:border-brand active:text-brand"
+          className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-5 text-center text-gray-600 transition active:scale-95 active:border-brand active:text-brand"
         >
-          <span className="text-2xl">📷</span>
+          <Camera className="h-7 w-7" strokeWidth={1.75} />
           <span className="text-sm font-semibold">Tomar foto</span>
         </button>
         <button
           type="button"
           onClick={() => galleryRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-5 text-center text-gray-600 transition active:border-brand active:text-brand"
+          className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-5 text-center text-gray-600 transition active:scale-95 active:border-brand active:text-brand"
         >
-          <span className="text-2xl">🖼️</span>
+          <ImagePlus className="h-7 w-7" strokeWidth={1.75} />
           <span className="text-sm font-semibold">
             {images.length > 0 ? "Agregar otra" : "Elegir imagen"}
           </span>
@@ -120,9 +121,9 @@ export function MultiImagePicker({
       <button
         type="button"
         onClick={() => galleryRef.current?.click()}
-        className="hidden w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-gray-300 bg-white px-4 py-6 text-center text-gray-500 transition hover:border-brand hover:text-brand sm:flex"
+        className="hidden w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-4 py-6 text-center text-gray-500 transition hover:border-brand hover:text-brand sm:flex"
       >
-        <span className="text-2xl">📋</span>
+        <ClipboardPaste className="h-7 w-7" strokeWidth={1.75} />
         <span className="font-medium">
           {allowPaste ? "Pega una imagen aquí (Ctrl + V)" : "Toca para elegir imagen"}
         </span>

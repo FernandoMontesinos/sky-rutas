@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState, startTransition } from "react";
+import { CheckCircle2, AlertTriangle, Camera } from "lucide-react";
 import { completeOrder, type FormResult } from "../actions";
 import { MultiImagePicker, type PickedImage } from "@/components/multi-image-picker";
 import { TYPE_LABEL, type OrderType } from "@/lib/types";
@@ -33,23 +34,54 @@ export default function CompletarForm({
   }
 
   const accion = tipo === "entrega" ? "entrega" : "recojo";
+  const accionParticipio = tipo === "entrega" ? "entregado" : "recogido";
   const errorMsg = localError ?? state.error;
 
   return (
-    <div className="space-y-3 rounded-2xl border border-brand/30 bg-brand/5 p-4">
-      <h2 className="font-semibold text-gray-900">Foto(s) de la guía</h2>
+    <div className="space-y-4 rounded-2xl border border-brand/30 bg-brand/5 p-4">
+      <h2 className="flex items-center gap-2 font-semibold text-gray-900">
+        <Camera className="h-5 w-5 text-brand" />
+        Foto(s) de la guía
+      </h2>
 
       <MultiImagePicker label="" images={images} onChange={setImages} />
 
-      <label className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-gray-700">
-        <input
-          type="checkbox"
-          checked={parcial}
-          onChange={(e) => setParcial(e.target.checked)}
-          className="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand"
-        />
-        Fue una {accion} <b>parcial</b> (falta completar el resto)
-      </label>
+      <div>
+        <span className="mb-1.5 block text-sm font-medium text-gray-700">
+          ¿Cómo quedó la {accion}?
+        </span>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setParcial(false)}
+            className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 font-bold transition ${
+              !parcial
+                ? "border-green-600 bg-green-600 text-white"
+                : "border-gray-300 bg-white text-gray-700 hover:border-green-600"
+            }`}
+          >
+            <CheckCircle2 className="h-5 w-5" />
+            Completa
+          </button>
+          <button
+            type="button"
+            onClick={() => setParcial(true)}
+            className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 font-bold transition ${
+              parcial
+                ? "border-orange-500 bg-orange-500 text-white"
+                : "border-gray-300 bg-white text-gray-700 hover:border-orange-500"
+            }`}
+          >
+            <AlertTriangle className="h-5 w-5" />
+            Parcial
+          </button>
+        </div>
+        {parcial && (
+          <p className="mt-1.5 text-xs text-orange-700">
+            Se marcará como completada, indicando que falta terminar el resto.
+          </p>
+        )}
+      </div>
 
       {errorMsg && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-dark">{errorMsg}</p>
@@ -63,9 +95,7 @@ export default function CompletarForm({
       >
         {pending
           ? "Confirmando..."
-          : `Confirmar ${accion} (marcar como ${
-              tipo === "entrega" ? "entregado" : "recogido"
-            }${parcial ? " parcialmente" : ""})`}
+          : `Confirmar ${accion} (marcar como ${accionParticipio}${parcial ? " parcialmente" : ""})`}
       </button>
       <p className="text-center text-xs text-gray-500">
         {TYPE_LABEL[tipo]} · Al confirmar, la orden se marca como completada.

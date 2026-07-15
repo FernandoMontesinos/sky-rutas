@@ -2,13 +2,26 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Home, PackagePlus, ClipboardList, Map, BarChart3, Users, type LucideIcon } from "lucide-react";
+
+/** Registro de íconos por nombre: un Server Component no puede pasarle un
+ *  componente (función) a uno de cliente, así que aquí solo viaja un string
+ *  y este archivo (ya en el cliente) resuelve el ícono real. */
+const ICONS: Record<string, LucideIcon> = {
+  home: Home,
+  "package-plus": PackagePlus,
+  "clipboard-list": ClipboardList,
+  map: Map,
+  "bar-chart": BarChart3,
+  users: Users,
+};
 
 export type NavEntry = {
   href: string;
   label: string;
   /** Etiqueta corta para la barra inferior móvil (si no, usa label). */
   short?: string;
-  icon: string;
+  icon: keyof typeof ICONS;
 };
 
 /** Devuelve el href del item activo: el prefijo más largo que calza con la ruta. */
@@ -28,19 +41,23 @@ export function DesktopNav({ items }: { items: NavEntry[] }) {
   const active = useActiveHref(items);
   return (
     <nav className="mx-auto hidden max-w-4xl gap-1 px-2 pb-2 sm:flex">
-      {items.map((i) => (
-        <Link
-          key={i.href}
-          href={i.href}
-          className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-            active === i.href
-              ? "bg-brand/10 text-brand"
-              : "text-gray-600 hover:bg-brand/10 hover:text-brand"
-          }`}
-        >
-          {i.label}
-        </Link>
-      ))}
+      {items.map((i) => {
+        const Icon = ICONS[i.icon];
+        return (
+          <Link
+            key={i.href}
+            href={i.href}
+            className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+              active === i.href
+                ? "bg-brand/10 text-brand"
+                : "text-gray-600 hover:bg-brand/10 hover:text-brand"
+            }`}
+          >
+            <Icon className="h-[18px] w-[18px]" strokeWidth={2.25} />
+            {i.label}
+          </Link>
+        );
+      })}
     </nav>
   );
 }
@@ -54,18 +71,25 @@ export function MobileNav({ items }: { items: NavEntry[] }) {
         className="grid"
         style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
       >
-        {items.map((i) => (
-          <Link
-            key={i.href}
-            href={i.href}
-            className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${
-              active === i.href ? "text-brand" : "text-gray-500"
-            }`}
-          >
-            <span className="text-xl leading-none">{i.icon}</span>
-            {i.short ?? i.label}
-          </Link>
-        ))}
+        {items.map((i) => {
+          const isActive = active === i.href;
+          const Icon = ICONS[i.icon];
+          return (
+            <Link
+              key={i.href}
+              href={i.href}
+              className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium transition-colors ${
+                isActive ? "text-brand" : "text-gray-500"
+              }`}
+            >
+              <Icon
+                className={`h-5 w-5 transition-transform duration-200 ${isActive ? "scale-110" : "scale-100"}`}
+                strokeWidth={isActive ? 2.5 : 2}
+              />
+              {i.short ?? i.label}
+            </Link>
+          );
+        })}
       </div>
     </nav>
   );

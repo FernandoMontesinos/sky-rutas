@@ -1,3 +1,4 @@
+import { Truck, Building2, Package, type LucideIcon } from "lucide-react";
 import {
   MODALIDAD_SHORT,
   STATUS_LABEL,
@@ -52,14 +53,18 @@ export function ModalidadBadge({ modalidad }: { modalidad: Modalidad }) {
     oficina: "bg-purple-100 text-purple-800",
     courier: "bg-orange-100 text-orange-800",
   };
-  const icon: Record<Modalidad, string> = {
-    reparto: "🚚",
-    oficina: "🏢",
-    courier: "📦",
+  const Icon: Record<Modalidad, LucideIcon> = {
+    reparto: Truck,
+    oficina: Building2,
+    courier: Package,
   };
+  const IconComp = Icon[modalidad];
   return (
-    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${styles[modalidad]}`}>
-      {icon[modalidad]} {MODALIDAD_SHORT[modalidad]}
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${styles[modalidad]}`}
+    >
+      <IconComp className="h-3 w-3" strokeWidth={2.5} />
+      {MODALIDAD_SHORT[modalidad]}
     </span>
   );
 }

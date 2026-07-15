@@ -2,18 +2,19 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { ROLE_LABEL, type UserRole } from "@/lib/types";
 import { LocationSharer } from "@/components/location-sharer";
+import { RealtimeRefresher } from "@/components/realtime-refresher";
 import { DesktopNav, MobileNav, type NavEntry } from "@/components/app-nav";
 import { signOut } from "./actions";
 
 type NavItem = NavEntry & { roles: UserRole[] };
 
 const NAV: NavItem[] = [
-  { href: "/", label: "Inicio", icon: "🏠", roles: ["admin", "vendedor", "almacen", "repartidor"] },
-  { href: "/ordenes/nueva", label: "Nueva orden", short: "Nueva", icon: "➕", roles: ["admin", "vendedor"] },
-  { href: "/ordenes", label: "Órdenes", icon: "📋", roles: ["admin", "vendedor", "almacen", "repartidor"] },
-  { href: "/mapa", label: "Mapa", icon: "🗺️", roles: ["admin", "almacen"] },
-  { href: "/reportes", label: "Reportes", icon: "📊", roles: ["admin", "almacen"] },
-  { href: "/admin/usuarios", label: "Usuarios", icon: "👥", roles: ["admin"] },
+  { href: "/", label: "Inicio", icon: "home", roles: ["admin", "vendedor", "almacen", "repartidor"] },
+  { href: "/ordenes/nueva", label: "Nueva orden", short: "Nueva", icon: "package-plus", roles: ["admin", "vendedor"] },
+  { href: "/ordenes", label: "Órdenes", icon: "clipboard-list", roles: ["admin", "vendedor", "almacen", "repartidor"] },
+  { href: "/mapa", label: "Mapa", icon: "map", roles: ["admin", "almacen"] },
+  { href: "/reportes", label: "Reportes", icon: "bar-chart", roles: ["admin", "almacen"] },
+  { href: "/admin/usuarios", label: "Usuarios", icon: "users", roles: ["admin"] },
 ];
 
 export default async function AppLayout({
@@ -26,6 +27,7 @@ export default async function AppLayout({
 
   return (
     <div className="flex min-h-screen flex-col">
+      <RealtimeRefresher />
       <header className="sticky top-0 z-10 border-b border-gray-200 bg-white shadow-sm">
         <div className="mx-auto flex max-w-4xl items-center gap-3 px-4 py-3">
           <Link href="/" className="flex items-center gap-2">

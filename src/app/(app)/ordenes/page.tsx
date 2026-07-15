@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Plus, StickyNote, Truck, Users } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, TypeBadge } from "@/components/badges";
@@ -46,13 +47,22 @@ function OrderCard({ o }: { o: OrderWithNames }) {
                 Parcial
               </span>
             )}
-            {o.nota && <span title="Tiene nota">📝</span>}
+            {o.nota && (
+              <StickyNote className="h-3.5 w-3.5 text-gray-400" strokeWidth={2.25} aria-label="Tiene nota" />
+            )}
           </div>
           {o.cliente && (
             <div className="mt-0.5 truncate text-xs font-medium text-gray-700">{o.cliente}</div>
           )}
-          <div className="truncate text-xs text-gray-500">
-            {o.repartidor ? `🚚 ${o.repartidor.full_name}` : o.creador ? `por ${o.creador.full_name}` : ""}
+          <div className="flex items-center gap-1 truncate text-xs text-gray-500">
+            {o.repartidor ? (
+              <>
+                <Truck className="h-3 w-3 shrink-0" strokeWidth={2.25} />
+                <span className="truncate">{o.repartidor.full_name}</span>
+              </>
+            ) : o.creador ? (
+              <span className="truncate">por {o.creador.full_name}</span>
+            ) : null}
           </div>
         </div>
       </div>
@@ -98,10 +108,16 @@ function Column({
   );
 }
 
-export default async function OrdenesPage() {
+export default async function OrdenesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ vista?: string }>;
+}) {
   const { userId, profile } = await requireUser();
+  const { vista } = await searchParams;
   const supabase = await createClient();
   const isRepartidor = profile.role === "repartidor";
+  const verTodas = isRepartidor && vista === "todas";
 
   // Activas (pendiente + asignado) y completadas (recientes).
   let activas = supabase
@@ -120,7 +136,7 @@ export default async function OrdenesPage() {
     .order("completed_at", { ascending: false })
     .limit(100);
 
-  if (isRepartidor) {
+  if (isRepartidor && !verTodas) {
     activas = activas.eq("assigned_to", userId);
     completadas = completadas.eq("assigned_to", userId);
   }
@@ -130,25 +146,56 @@ export default async function OrdenesPage() {
   const completadasList = (comp ?? []) as unknown as OrderWithNames[];
 
   const byEstado = (e: OrderStatus) => activasList.filter((o) => o.estado === e);
+  const mostrarTodasLasColumnas = !isRepartidor || verTodas;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">
-          {isRepartidor ? "Mi ruta" : "Tablero de órdenes"}
+          {isRepartidor ? (verTodas ? "Toda la ruta" : "Mi ruta") : "Tablero de órdenes"}
         </h1>
         {(profile.role === "admin" || profile.role === "vendedor") && (
           <Link
             href="/ordenes/nueva"
-            className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-dark"
+            className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark"
           >
-            ➕ Nueva
+            <Plus className="h-4 w-4" strokeWidth={2.5} />
+            Nueva
           </Link>
         )}
       </div>
 
-      {isRepartidor ? (
-        /* Repartidor: columnas apiladas en móvil — su ruta primero, sin scroll lateral */
+      {isRepartidor && (
+        <div className="inline-flex rounded-xl bg-gray-100 p-1">
+          <Link
+            href="/ordenes"
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+              !verTodas ? "bg-white text-brand shadow-sm" : "text-gray-500"
+            }`}
+          >
+            <Truck className="h-4 w-4" strokeWidth={2.25} />
+            Mi ruta
+          </Link>
+          <Link
+            href="/ordenes?vista=todas"
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+              verTodas ? "bg-white text-brand shadow-sm" : "text-gray-500"
+            }`}
+          >
+            <Users className="h-4 w-4" strokeWidth={2.25} />
+            Toda la ruta
+          </Link>
+        </div>
+      )}
+
+      {mostrarTodasLasColumnas ? (
+        <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
+          <Column title="Pendientes" color="bg-gray-400" orders={byEstado("pendiente")} />
+          <Column title="Asignadas" color="bg-amber-500" orders={byEstado("asignado")} />
+          <Column title="Completadas · 2 días" color="bg-green-500" orders={completadasList} />
+        </div>
+      ) : (
+        /* Repartidor viendo solo lo suyo: columnas apiladas en móvil, sin scroll lateral */
         <div className="flex flex-col gap-3 sm:flex-row">
           <Column
             title="Por hacer"
@@ -162,12 +209,6 @@ export default async function OrdenesPage() {
             orders={completadasList}
             fullWidthMobile
           />
-        </div>
-      ) : (
-        <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
-          <Column title="Pendientes" color="bg-gray-400" orders={byEstado("pendiente")} />
-          <Column title="Asignadas" color="bg-amber-500" orders={byEstado("asignado")} />
-          <Column title="Completadas · 2 días" color="bg-green-500" orders={completadasList} />
         </div>
       )}
     </div>
