@@ -45,12 +45,17 @@ export async function createOrder(
   const tipo = String(formData.get("tipo") ?? "");
   const modalidad = String(formData.get("modalidad") ?? "reparto");
   const courierTracking = String(formData.get("courier_tracking") ?? "").trim() || null;
+  // Proveedor/pedido de compra: solo aplica a una entrega (venta) que además
+  // requirió comprarle a un proveedor. En un recojo, ya se usa cliente/numero
+  // como proveedor/pedido (ver etiquetas dinámicas en el formulario).
+  const proveedor = String(formData.get("proveedor") ?? "").trim() || null;
+  const numeroPedidoCompra = String(formData.get("numero_pedido_compra") ?? "").trim() || null;
   const nota = String(formData.get("nota") ?? "").trim() || null;
   const imagenes = formData.getAll("imagenes").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!numero) return { error: "Ingresa el número de pedido." };
   if (tipo !== "entrega" && tipo !== "recojo")
-    return { error: "Selecciona si es ENTREGA o RECOJO." };
+    return { error: "Selecciona si es CLIENTE o PROVEEDOR." };
   if (!["reparto", "oficina", "courier"].includes(modalidad))
     return { error: "Modalidad de entrega inválida." };
   if (imagenes.length === 0)
@@ -66,6 +71,8 @@ export async function createOrder(
     tipo,
     modalidad,
     courier_tracking: modalidad === "courier" ? courierTracking : null,
+    proveedor: tipo === "entrega" ? proveedor : null,
+    numero_pedido_compra: tipo === "entrega" ? numeroPedidoCompra : null,
     nota,
     imagen_url: urls[0] ?? null,
     imagenes_urls: urls,

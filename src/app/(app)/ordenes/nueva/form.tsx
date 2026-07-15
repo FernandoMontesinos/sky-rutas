@@ -5,14 +5,23 @@ import { createOrder, type FormResult } from "../actions";
 import { MultiImagePicker, type PickedImage } from "@/components/multi-image-picker";
 import { MODALIDAD_LABEL, type Modalidad, type OrderType } from "@/lib/types";
 
+const TIPO_LABEL: Record<OrderType, string> = {
+  entrega: "Cliente",
+  recojo: "Proveedor",
+};
+
 export default function NuevaOrdenForm() {
   const [state, action, pending] = useActionState<FormResult, FormData>(createOrder, {});
   const [images, setImages] = useState<PickedImage[]>([]);
   const [tipo, setTipo] = useState<OrderType | "">("");
   const [modalidad, setModalidad] = useState<Modalidad>("reparto");
+  const [requiereCompra, setRequiereCompra] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
-  const proveedorLabel = tipo === "recojo" ? "Proveedor (de dónde se compra)" : "Cliente";
+  const esRecojo = tipo === "recojo";
+  const clienteLabel = esRecojo ? "Proveedor (de dónde se compra)" : "Cliente";
+  const numeroLabel = tipo === "entrega" ? "N° de cotización" : esRecojo ? "N° de pedido" : "Número de orden / pedido";
+  const numeroPlaceholder = tipo === "entrega" ? "Ej. S010222" : esRecojo ? "Ej. P01010" : "Ej. 20613207032";
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -22,7 +31,7 @@ export default function NuevaOrdenForm() {
       return;
     }
     if (!tipo) {
-      setLocalError("Selecciona ENTREGA o RECOJO.");
+      setLocalError("Selecciona CLIENTE o PROVEEDOR.");
       return;
     }
     const fd = new FormData(e.currentTarget);
@@ -43,16 +52,16 @@ export default function NuevaOrdenForm() {
         allowPaste
       />
 
-      {/* Número de pedido */}
+      {/* Número de pedido / cotización (etiqueta según el tipo elegido) */}
       <div>
         <label htmlFor="numero_pedido" className="mb-1 block text-sm font-medium text-gray-700">
-          Número de orden / pedido
+          {numeroLabel}
         </label>
         <input
           id="numero_pedido"
           name="numero_pedido"
           required
-          placeholder="Ej. 20613207032"
+          placeholder={numeroPlaceholder}
           className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
         />
       </div>
@@ -60,12 +69,12 @@ export default function NuevaOrdenForm() {
       {/* Cliente / Proveedor (etiqueta según el tipo elegido) */}
       <div>
         <label htmlFor="cliente" className="mb-1 block text-sm font-medium text-gray-700">
-          {proveedorLabel}
+          {clienteLabel}
         </label>
         <input
           id="cliente"
           name="cliente"
-          placeholder={tipo === "recojo" ? "Nombre del proveedor" : "Nombre del cliente"}
+          placeholder={esRecojo ? "Nombre del proveedor" : "Nombre del cliente"}
           className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
         />
       </div>
@@ -85,11 +94,56 @@ export default function NuevaOrdenForm() {
                   : "border-gray-300 bg-white text-gray-700 hover:border-brand"
               }`}
             >
-              {t}
+              {TIPO_LABEL[t]}
             </button>
           ))}
         </div>
       </div>
+
+      {/* Compra a proveedor asociada (solo cuando es Cliente/entrega) */}
+      {tipo === "entrega" && (
+        <div>
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input
+              type="checkbox"
+              checked={requiereCompra}
+              onChange={(e) => setRequiereCompra(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand"
+            />
+            Esta entrega requirió comprar a un proveedor
+          </label>
+
+          {requiereCompra && (
+            <div className="mt-2 space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div>
+                <label htmlFor="proveedor" className="mb-1 block text-sm font-medium text-gray-700">
+                  Proveedor
+                </label>
+                <input
+                  id="proveedor"
+                  name="proveedor"
+                  placeholder="Nombre del proveedor"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="numero_pedido_compra"
+                  className="mb-1 block text-sm font-medium text-gray-700"
+                >
+                  N° de pedido de compra
+                </label>
+                <input
+                  id="numero_pedido_compra"
+                  name="numero_pedido_compra"
+                  placeholder="Ej. P01010"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Modalidad de entrega */}
       <div>

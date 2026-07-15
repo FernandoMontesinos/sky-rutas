@@ -3,11 +3,12 @@ import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
-import { SubmitButton } from "@/components/submit-button";
 import { ImageGallery } from "@/components/image-gallery";
-import { assignOrder, deleteOrder, updateModalidad } from "../actions";
+import { deleteOrder } from "../actions";
+import { ModalidadForm } from "./modalidad-form";
+import { AsignarForm } from "./asignar-form";
 import CompletarForm from "./completar";
-import { MODALIDAD_LABEL, type Modalidad, type OrderWithNames, type Profile } from "@/lib/types";
+import { MODALIDAD_LABEL, type OrderWithNames, type Profile } from "@/lib/types";
 
 const SELECT =
   "*, creador:profiles!orders_created_by_fkey(full_name), repartidor:profiles!orders_assigned_to_fkey(full_name)";
@@ -50,10 +51,15 @@ export default async function OrdenDetallePage({
   const canAssign = profile.role === "admin" || profile.role === "almacen";
   const isMine = order.assigned_to === userId;
   const isRepartidor = profile.role === "repartidor";
+  const isAlmacen = profile.role === "almacen";
+  // Almacén termina su trabajo en "asignar" cuando hay un repartidor de por
+  // medio (modalidad reparto) — es el repartidor quien confirma desde su
+  // celular. En oficina/courier no hay repartidor, así que almacén sí
+  // completa directo. Admin siempre puede, para soporte/corrección.
   const canComplete =
     order.estado !== "completado" &&
     (profile.role === "admin" ||
-      profile.role === "almacen" ||
+      (isAlmacen && order.modalidad !== "reparto") ||
       (isRepartidor && isMine));
 
   let repartidores: Profile[] = [];
@@ -125,6 +131,18 @@ export default async function OrdenDetallePage({
             <dd className="font-medium text-gray-800">{order.courier_tracking}</dd>
           </div>
         )}
+        {order.proveedor && (
+          <div>
+            <dt className="text-gray-400">Proveedor (compra asociada)</dt>
+            <dd className="font-medium text-gray-800">{order.proveedor}</dd>
+          </div>
+        )}
+        {order.numero_pedido_compra && (
+          <div>
+            <dt className="text-gray-400">N° pedido de compra</dt>
+            <dd className="font-medium text-gray-800">{order.numero_pedido_compra}</dd>
+          </div>
+        )}
         {order.nota && (
           <div className="col-span-2">
             <dt className="text-gray-400">Nota</dt>
@@ -135,71 +153,33 @@ export default async function OrdenDetallePage({
 
       {/* Modalidad (almacén/admin) */}
       {canAssign && order.estado !== "completado" && (
-        <form action={updateModalidad} className="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
-          <input type="hidden" name="order_id" value={order.id} />
-          <label htmlFor="modalidad" className="block text-sm font-medium text-gray-700">
-            Modalidad de entrega
-          </label>
-          <select
-            id="modalidad"
-            name="modalidad"
-            defaultValue={order.modalidad}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand"
-          >
-            {(["reparto", "oficina", "courier"] as Modalidad[]).map((m) => (
-              <option key={m} value={m}>
-                {MODALIDAD_LABEL[m]}
-              </option>
-            ))}
-          </select>
-          <input
-            name="courier_tracking"
-            defaultValue={order.courier_tracking ?? ""}
-            placeholder="N° de tracking (solo si es Courier)"
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand"
-          />
-          <SubmitButton className="rounded-lg bg-brand px-4 py-2 font-semibold text-white transition hover:bg-brand-dark">
-            Guardar modalidad
-          </SubmitButton>
-        </form>
+        <ModalidadForm
+          orderId={order.id}
+          modalidad={order.modalidad}
+          courierTracking={order.courier_tracking}
+        />
       )}
 
       {/* Asignar (almacén/admin) */}
       {canAssign && order.estado !== "completado" && (
-        <form action={assignOrder} className="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
-          <input type="hidden" name="order_id" value={order.id} />
-          <label htmlFor="repartidor_id" className="block text-sm font-medium text-gray-700">
-            Asignar a repartidor
-          </label>
-          <div className="flex gap-2">
-            <select
-              id="repartidor_id"
-              name="repartidor_id"
-              defaultValue={order.assigned_to ?? ""}
-              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand"
-            >
-              <option value="">— Sin asignar —</option>
-              {repartidores.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.full_name}
-                </option>
-              ))}
-            </select>
-            <SubmitButton className="rounded-lg bg-brand px-4 py-2 font-semibold text-white transition hover:bg-brand-dark">
-              Guardar
-            </SubmitButton>
-          </div>
-          {repartidores.length === 0 && (
-            <p className="text-xs text-amber-700">
-              No hay repartidores activos. Crea usuarios con rol repartidor en Usuarios.
-            </p>
-          )}
-        </form>
+        <AsignarForm
+          orderId={order.id}
+          assignedTo={order.assigned_to}
+          repartidores={repartidores}
+        />
+      )}
+
+      {isAlmacen && order.modalidad === "reparto" && order.estado !== "completado" && (
+        <p className="rounded-xl bg-blue-50 p-3 text-sm text-blue-800">
+          Es reparto por repartidor — {order.repartidor?.full_name ?? "el repartidor asignado"}{" "}
+          confirma la entrega/recojo desde su celular. Tu parte termina en asignar.
+        </p>
       )}
 
       {/* Completar:
           - repartidor: solo si la orden es suya (asignada)
-          - almacén/admin: siempre (incluye oficina y courier) */}
+          - almacén: solo oficina/courier (en reparto lo hace el repartidor)
+          - admin: siempre, para soporte */}
       {canComplete && (isRepartidor ? order.assigned_to : true) && (
         <CompletarForm orderId={order.id} tipo={order.tipo} />
       )}
