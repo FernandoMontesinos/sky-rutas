@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { notify, userIdsByRole } from "@/lib/notify";
 
 export type FormResult = { error?: string; ok?: boolean };
 
@@ -65,21 +66,33 @@ export async function createOrder(
   const { urls, error: upErr } = await uploadMany(supabase, "ordenes", userId, imagenes);
   if (upErr) return { error: "No se pudo subir la imagen: " + upErr };
 
-  const { error: insErr } = await supabase.from("orders").insert({
-    numero_pedido: numero,
-    cliente,
-    tipo,
-    modalidad,
-    courier_tracking: modalidad === "courier" ? courierTracking : null,
-    proveedor: tipo === "entrega" ? proveedor : null,
-    numero_pedido_compra: tipo === "entrega" ? numeroPedidoCompra : null,
-    nota,
-    imagen_url: urls[0] ?? null,
-    imagenes_urls: urls,
-    created_by: userId,
-    estado: "pendiente",
-  });
+  const { data: inserted, error: insErr } = await supabase
+    .from("orders")
+    .insert({
+      numero_pedido: numero,
+      cliente,
+      tipo,
+      modalidad,
+      courier_tracking: modalidad === "courier" ? courierTracking : null,
+      proveedor: tipo === "entrega" ? proveedor : null,
+      numero_pedido_compra: tipo === "entrega" ? numeroPedidoCompra : null,
+      nota,
+      imagen_url: urls[0] ?? null,
+      imagenes_urls: urls,
+      created_by: userId,
+      estado: "pendiente",
+    })
+    .select("id")
+    .single();
   if (insErr) return { error: insErr.message };
+
+  const almacenIds = await userIdsByRole("almacen");
+  await notify(almacenIds, {
+    tipo: "orden_pendiente",
+    titulo: "Nueva orden pendiente",
+    mensaje: `#${numero}${cliente ? " · " + cliente : ""} — falta asignar repartidor.`,
+    orderId: inserted.id,
+  });
 
   revalidatePath("/ordenes");
   redirect("/ordenes");
@@ -101,14 +114,25 @@ export async function assignOrder(formData: FormData): Promise<void> {
       .update({ assigned_to: null, estado: "pendiente", assigned_at: null })
       .eq("id", orderId);
   } else {
-    await supabase
+    const { data: updated } = await supabase
       .from("orders")
       .update({
         assigned_to: repartidorId,
         estado: "asignado",
         assigned_at: new Date().toISOString(),
       })
-      .eq("id", orderId);
+      .eq("id", orderId)
+      .select("numero_pedido, cliente")
+      .single();
+
+    if (updated) {
+      await notify([repartidorId], {
+        tipo: "orden_asignada",
+        titulo: "Te asignaron una orden",
+        mensaje: `#${updated.numero_pedido}${updated.cliente ? " · " + updated.cliente : ""}`,
+        orderId,
+      });
+    }
   }
 
   revalidatePath(`/ordenes/${orderId}`);
@@ -159,7 +183,7 @@ export async function completeOrder(
   const { urls, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
   if (upErr) return { error: "No se pudo subir la foto: " + upErr };
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("orders")
     .update({
       guia_url: urls[0] ?? null,
@@ -168,8 +192,21 @@ export async function completeOrder(
       estado: "completado",
       completed_at: new Date().toISOString(),
     })
-    .eq("id", orderId);
+    .eq("id", orderId)
+    .select("numero_pedido, cliente, created_by")
+    .single();
   if (error) return { error: error.message };
+
+  if (updated?.created_by) {
+    await notify([updated.created_by], {
+      tipo: parcial ? "orden_parcial" : "orden_completada",
+      titulo: parcial ? "Orden completada parcialmente" : "Orden completada",
+      mensaje: `#${updated.numero_pedido}${updated.cliente ? " · " + updated.cliente : ""}${
+        parcial ? " — falta terminar el resto." : ""
+      }`,
+      orderId,
+    });
+  }
 
   revalidatePath(`/ordenes/${orderId}`);
   revalidatePath("/ordenes");

@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { ROLE_LABEL, type UserRole } from "@/lib/types";
 import { LocationSharer } from "@/components/location-sharer";
 import { RealtimeRefresher } from "@/components/realtime-refresher";
+import { NotificationBell } from "@/components/notification-bell";
 import { DesktopNav, MobileNav, type NavEntry } from "@/components/app-nav";
 import { signOut } from "./actions";
 
@@ -22,7 +23,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { profile } = await requireUser();
+  const { userId, profile } = await requireUser();
   const items = NAV.filter((i) => i.roles.includes(profile.role));
 
   return (
@@ -36,13 +37,14 @@ export default async function AppLayout({
             <span className="text-sm font-semibold text-gray-400">Rutas</span>
           </Link>
 
-          <div className="ml-auto flex min-w-0 items-center gap-3 text-sm">
+          <div className="ml-auto flex min-w-0 items-center gap-2 text-sm">
             <span className="truncate text-gray-500">
               <span className="max-w-[110px] truncate align-bottom sm:max-w-none">
                 {profile.full_name}
               </span>
               <span className="hidden sm:inline"> · {ROLE_LABEL[profile.role]}</span>
             </span>
+            <NotificationBell userId={userId} />
             <form action={signOut}>
               <button
                 type="submit"
