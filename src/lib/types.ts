@@ -26,6 +26,7 @@ export type Order = {
   imagenes_urls: string[];
   guias_urls: string[];
   entrega_parcial: boolean;
+  parent_order_id: string | null;
   nota: string | null;
   created_by: string | null;
   assigned_to: string | null;

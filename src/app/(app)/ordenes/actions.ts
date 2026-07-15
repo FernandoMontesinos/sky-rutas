@@ -173,11 +173,14 @@ export async function completeOrder(
 
   const orderId = String(formData.get("order_id") ?? "");
   const parcial = String(formData.get("entrega_parcial") ?? "") === "true";
+  const notaFaltante = String(formData.get("nota_faltante") ?? "").trim();
   const guias = formData.getAll("guias").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!orderId) return { error: "Orden inválida." };
   if (guias.length === 0)
     return { error: "Toma al menos una foto de la guía antes de confirmar." };
+  if (parcial && !notaFaltante)
+    return { error: "Cuéntanos qué falta completar." };
 
   const supabase = await createClient();
   const { urls, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
@@ -193,9 +196,47 @@ export async function completeOrder(
       completed_at: new Date().toISOString(),
     })
     .eq("id", orderId)
-    .select("numero_pedido, cliente, created_by")
+    .select(
+      "numero_pedido, cliente, proveedor, numero_pedido_compra, tipo, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by"
+    )
     .single();
   if (error) return { error: error.message };
+
+  let backorderId: string | null = null;
+
+  // Backorder: si quedó parcial, se crea automáticamente un pedido nuevo
+  // solo por lo que falta (mismo patrón que usa Odoo para entregas
+  // parciales) — el original queda como registro histórico intacto de
+  // lo que sí se completó, y el remanente sigue su propio flujo desde
+  // "pendiente" para que almacén lo asigne cuando corresponda.
+  if (parcial && updated) {
+    const { count } = await supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("parent_order_id", orderId);
+    const sufijo = `-R${(count ?? 0) + 1}`;
+
+    const { data: backorder, error: boErr } = await supabase
+      .from("orders")
+      .insert({
+        numero_pedido: `${updated.numero_pedido}${sufijo}`,
+        cliente: updated.cliente,
+        proveedor: updated.proveedor,
+        numero_pedido_compra: updated.numero_pedido_compra,
+        tipo: updated.tipo,
+        modalidad: updated.modalidad,
+        courier_tracking: updated.courier_tracking,
+        imagen_url: updated.imagen_url,
+        imagenes_urls: updated.imagenes_urls,
+        nota: notaFaltante,
+        created_by: updated.created_by,
+        parent_order_id: orderId,
+        estado: "pendiente",
+      })
+      .select("id")
+      .single();
+    if (!boErr && backorder) backorderId = backorder.id;
+  }
 
   if (updated?.created_by) {
     await notify([updated.created_by], {
@@ -208,7 +249,18 @@ export async function completeOrder(
     });
   }
 
+  if (backorderId) {
+    const almacenIds = await userIdsByRole("almacen");
+    await notify(almacenIds, {
+      tipo: "orden_pendiente",
+      titulo: "Pedido pendiente por entrega parcial",
+      mensaje: `#${updated!.numero_pedido} quedó parcial — falta asignar el remanente.`,
+      orderId: backorderId,
+    });
+  }
+
   revalidatePath(`/ordenes/${orderId}`);
+  if (backorderId) revalidatePath(`/ordenes/${backorderId}`);
   revalidatePath("/ordenes");
   redirect("/ordenes");
 }

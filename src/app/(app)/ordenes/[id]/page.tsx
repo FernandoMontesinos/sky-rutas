@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { GitBranch } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
@@ -63,6 +64,15 @@ export default async function OrdenDetallePage({
     order.estado !== "completado" &&
     (profile.role === "admin" || isAlmacen || (isRepartidor && isMine));
 
+  // Backorder: si esta orden viene de una parcial, o si generó una al
+  // quedar parcial, se muestra el enlace cruzado para no perder el hilo.
+  const [{ data: padre }, { data: hijos }] = await Promise.all([
+    order.parent_order_id
+      ? supabase.from("orders").select("id, numero_pedido").eq("id", order.parent_order_id).single()
+      : Promise.resolve({ data: null }),
+    supabase.from("orders").select("id, numero_pedido, estado").eq("parent_order_id", order.id),
+  ]);
+
   let repartidores: Profile[] = [];
   if (canAssign) {
     const { data: reps } = await supabase
@@ -89,6 +99,30 @@ export default async function OrdenDetallePage({
         <ModalidadBadge modalidad={order.modalidad} />
         <StatusBadge estado={order.estado} parcial={order.entrega_parcial} />
       </div>
+
+      {(padre || (hijos && hijos.length > 0)) && (
+        <div className="space-y-1.5 rounded-xl border border-orange-200 bg-orange-50 p-3 text-sm">
+          {padre && (
+            <Link
+              href={`/ordenes/${padre.id}`}
+              className="flex items-center gap-1.5 font-medium text-orange-800 hover:underline"
+            >
+              <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={2.25} />
+              Es el remanente de la orden #{padre.numero_pedido} (quedó parcial)
+            </Link>
+          )}
+          {hijos?.map((h) => (
+            <Link
+              key={h.id}
+              href={`/ordenes/${h.id}`}
+              className="flex items-center gap-1.5 font-medium text-orange-800 hover:underline"
+            >
+              <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={2.25} />
+              Falta completar: pedido #{h.numero_pedido} ({h.estado})
+            </Link>
+          ))}
+        </div>
+      )}
 
       {/* Imágenes de la orden */}
       {imagenesOrden.length > 0 && (

@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { Plus, StickyNote, Truck, Users } from "lucide-react";
+import { Plus, StickyNote, Truck, Users, LayoutGrid, Table2 } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { ModalidadBadge, TypeBadge } from "@/components/badges";
+import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
 import type { OrderStatus, OrderWithNames } from "@/lib/types";
 
 const SELECT =
@@ -11,6 +11,11 @@ const SELECT =
 /** ISO de hace N días (fuera del componente para cumplir la regla de pureza de React). */
 function isoHaceDias(dias: number) {
   return new Date(Date.now() - dias * 86_400_000).toISOString();
+}
+
+function fmtFecha(iso: string | null) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
 
 function OrderCard({ o }: { o: OrderWithNames }) {
@@ -108,16 +113,82 @@ function Column({
   );
 }
 
+/** Vista tipo Notion: todas las órdenes en una sola tabla, sin dividir en columnas. */
+function TablaOrdenes({ orders }: { orders: OrderWithNames[] }) {
+  if (orders.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-400">
+        Sin órdenes en este rango.
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-sm">
+          <thead className="bg-gray-50 text-left text-gray-500">
+            <tr>
+              <th className="px-3 py-2 font-medium">N° pedido</th>
+              <th className="px-3 py-2 font-medium">Cliente / Proveedor</th>
+              <th className="px-3 py-2 font-medium">Tipo</th>
+              <th className="px-3 py-2 font-medium">Modalidad</th>
+              <th className="px-3 py-2 font-medium">Estado</th>
+              <th className="px-3 py-2 font-medium">Repartidor</th>
+              <th className="px-3 py-2 font-medium">Fecha</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {orders.map((o) => (
+              <tr key={o.id} className="transition hover:bg-gray-50">
+                <td className="whitespace-nowrap px-3 py-2">
+                  <Link href={`/ordenes/${o.id}`} className="font-semibold text-gray-900 hover:text-brand">
+                    #{o.numero_pedido}
+                  </Link>
+                </td>
+                <td className="max-w-[180px] truncate px-3 py-2 text-gray-700">{o.cliente || "—"}</td>
+                <td className="px-3 py-2">
+                  <TypeBadge tipo={o.tipo} />
+                </td>
+                <td className="px-3 py-2">
+                  <ModalidadBadge modalidad={o.modalidad} />
+                </td>
+                <td className="px-3 py-2">
+                  <StatusBadge estado={o.estado} parcial={o.entrega_parcial} />
+                </td>
+                <td className="max-w-[140px] truncate px-3 py-2 text-gray-600">
+                  {o.repartidor?.full_name ?? "—"}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-gray-500">
+                  {fmtFecha(o.estado === "completado" ? o.completed_at : o.created_at)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default async function OrdenesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ vista?: string }>;
+  searchParams: Promise<{ vista?: string; formato?: string }>;
 }) {
   const { userId, profile } = await requireUser();
-  const { vista } = await searchParams;
+  const { vista, formato: formatoParam } = await searchParams;
   const supabase = await createClient();
   const isRepartidor = profile.role === "repartidor";
   const verTodas = isRepartidor && vista === "todas";
+  const formato = formatoParam === "tabla" ? "tabla" : "kanban";
+
+  function hrefFormato(f: "kanban" | "tabla") {
+    const params = new URLSearchParams();
+    if (verTodas) params.set("vista", "todas");
+    if (f === "tabla") params.set("formato", "tabla");
+    const qs = params.toString();
+    return qs ? `/ordenes?${qs}` : "/ordenes";
+  }
 
   // Activas (pendiente + asignado) y completadas (recientes).
   let activas = supabase
@@ -165,30 +236,57 @@ export default async function OrdenesPage({
         )}
       </div>
 
-      {isRepartidor && (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {isRepartidor ? (
+          <div className="inline-flex rounded-xl bg-gray-100 p-1">
+            <Link
+              href="/ordenes"
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                !verTodas ? "bg-white text-brand shadow-sm" : "text-gray-500"
+              }`}
+            >
+              <Truck className="h-4 w-4" strokeWidth={2.25} />
+              Mi ruta
+            </Link>
+            <Link
+              href="/ordenes?vista=todas"
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                verTodas ? "bg-white text-brand shadow-sm" : "text-gray-500"
+              }`}
+            >
+              <Users className="h-4 w-4" strokeWidth={2.25} />
+              Toda la ruta
+            </Link>
+          </div>
+        ) : (
+          <span />
+        )}
+
         <div className="inline-flex rounded-xl bg-gray-100 p-1">
           <Link
-            href="/ordenes"
+            href={hrefFormato("kanban")}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
-              !verTodas ? "bg-white text-brand shadow-sm" : "text-gray-500"
+              formato === "kanban" ? "bg-white text-brand shadow-sm" : "text-gray-500"
             }`}
           >
-            <Truck className="h-4 w-4" strokeWidth={2.25} />
-            Mi ruta
+            <LayoutGrid className="h-4 w-4" strokeWidth={2.25} />
+            Kanban
           </Link>
           <Link
-            href="/ordenes?vista=todas"
+            href={hrefFormato("tabla")}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
-              verTodas ? "bg-white text-brand shadow-sm" : "text-gray-500"
+              formato === "tabla" ? "bg-white text-brand shadow-sm" : "text-gray-500"
             }`}
           >
-            <Users className="h-4 w-4" strokeWidth={2.25} />
-            Toda la ruta
+            <Table2 className="h-4 w-4" strokeWidth={2.25} />
+            Tabla
           </Link>
         </div>
-      )}
+      </div>
 
-      {mostrarTodasLasColumnas ? (
+      {formato === "tabla" ? (
+        <TablaOrdenes orders={[...activasList, ...completadasList]} />
+      ) : mostrarTodasLasColumnas ? (
         <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
           <Column title="Pendientes" color="bg-gray-400" orders={byEstado("pendiente")} />
           <Column title="Asignadas" color="bg-amber-500" orders={byEstado("asignado")} />
