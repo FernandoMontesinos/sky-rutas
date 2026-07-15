@@ -7,6 +7,7 @@ import { ImageGallery } from "@/components/image-gallery";
 import { deleteOrder } from "../actions";
 import { ModalidadForm } from "./modalidad-form";
 import { AsignarForm } from "./asignar-form";
+import { AlmacenOverrideCompletar } from "./almacen-override";
 import CompletarForm from "./completar";
 import { MODALIDAD_LABEL, type OrderWithNames, type Profile } from "@/lib/types";
 
@@ -52,15 +53,15 @@ export default async function OrdenDetallePage({
   const isMine = order.assigned_to === userId;
   const isRepartidor = profile.role === "repartidor";
   const isAlmacen = profile.role === "almacen";
-  // Almacén termina su trabajo en "asignar" cuando hay un repartidor de por
-  // medio (modalidad reparto) — es el repartidor quien confirma desde su
-  // celular. En oficina/courier no hay repartidor, así que almacén sí
-  // completa directo. Admin siempre puede, para soporte/corrección.
+  // Almacén normalmente termina su trabajo en "asignar" cuando hay un
+  // repartidor de por medio (modalidad reparto) — es el repartidor quien
+  // confirma desde su celular. Pero conserva la opción de completarla él
+  // mismo si hace falta (ver AlmacenOverrideCompletar), solo que no se le
+  // muestra de entrada para evitar que la marque sin querer.
+  const almacenReparto = isAlmacen && order.modalidad === "reparto";
   const canComplete =
     order.estado !== "completado" &&
-    (profile.role === "admin" ||
-      (isAlmacen && order.modalidad !== "reparto") ||
-      (isRepartidor && isMine));
+    (profile.role === "admin" || isAlmacen || (isRepartidor && isMine));
 
   let repartidores: Profile[] = [];
   if (canAssign) {
@@ -169,19 +170,18 @@ export default async function OrdenDetallePage({
         />
       )}
 
-      {isAlmacen && order.modalidad === "reparto" && order.estado !== "completado" && (
-        <p className="rounded-xl bg-blue-50 p-3 text-sm text-blue-800">
-          Es reparto por repartidor — {order.repartidor?.full_name ?? "el repartidor asignado"}{" "}
-          confirma la entrega/recojo desde su celular. Tu parte termina en asignar.
-        </p>
-      )}
-
       {/* Completar:
           - repartidor: solo si la orden es suya (asignada)
-          - almacén: solo oficina/courier (en reparto lo hace el repartidor)
-          - admin: siempre, para soporte */}
+          - almacén en reparto: oculto detrás de un paso extra (ver arriba)
+          - almacén en oficina/courier y admin: directo */}
       {canComplete && (isRepartidor ? order.assigned_to : true) && (
-        <CompletarForm orderId={order.id} tipo={order.tipo} />
+        almacenReparto ? (
+          <AlmacenOverrideCompletar repartidorNombre={order.repartidor?.full_name ?? "el repartidor asignado"}>
+            <CompletarForm orderId={order.id} tipo={order.tipo} />
+          </AlmacenOverrideCompletar>
+        ) : (
+          <CompletarForm orderId={order.id} tipo={order.tipo} />
+        )
       )}
 
       {isRepartidor && order.estado !== "completado" && !isMine && (

@@ -19,7 +19,7 @@ export default function NuevaOrdenForm() {
   const [localError, setLocalError] = useState<string | null>(null);
 
   const esRecojo = tipo === "recojo";
-  const clienteLabel = esRecojo ? "Proveedor (de dónde se compra)" : "Cliente";
+  const clienteLabel = esRecojo ? "Proveedor" : "Cliente";
   const numeroLabel = tipo === "entrega" ? "N° de cotización" : esRecojo ? "N° de pedido" : "Número de orden / pedido";
   const numeroPlaceholder = tipo === "entrega" ? "Ej. S010222" : esRecojo ? "Ej. P01010" : "Ej. 20613207032";
 
