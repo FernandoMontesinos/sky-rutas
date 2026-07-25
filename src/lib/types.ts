@@ -15,6 +15,7 @@ export type Order = {
   id: string;
   numero_pedido: string;
   cliente: string | null;
+  proyecto: string | null;
   proveedor: string | null;
   numero_pedido_compra: string | null;
   tipo: OrderType;

@@ -43,6 +43,7 @@ export async function createOrder(
 
   const numero = String(formData.get("numero_pedido") ?? "").trim();
   const cliente = String(formData.get("cliente") ?? "").trim() || null;
+  const proyecto = String(formData.get("proyecto") ?? "").trim() || null;
   const tipo = String(formData.get("tipo") ?? "");
   const modalidad = String(formData.get("modalidad") ?? "reparto");
   const courierTracking = String(formData.get("courier_tracking") ?? "").trim() || null;
@@ -71,6 +72,8 @@ export async function createOrder(
     .insert({
       numero_pedido: numero,
       cliente,
+      // El proyecto solo tiene sentido cuando se atiende a un cliente (venta).
+      proyecto: tipo === "entrega" ? proyecto : null,
       tipo,
       modalidad,
       courier_tracking: modalidad === "courier" ? courierTracking : null,
@@ -197,7 +200,7 @@ export async function completeOrder(
     })
     .eq("id", orderId)
     .select(
-      "numero_pedido, cliente, proveedor, numero_pedido_compra, tipo, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by"
+      "numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, tipo, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by"
     )
     .single();
   if (error) return { error: error.message };
@@ -221,6 +224,7 @@ export async function completeOrder(
       .insert({
         numero_pedido: `${updated.numero_pedido}${sufijo}`,
         cliente: updated.cliente,
+        proyecto: updated.proyecto,
         proveedor: updated.proveedor,
         numero_pedido_compra: updated.numero_pedido_compra,
         tipo: updated.tipo,

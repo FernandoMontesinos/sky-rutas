@@ -118,6 +118,9 @@ function OrderCardDetallado({ o }: { o: OrderWithNames }) {
           {o.cliente && (
             <div className="mt-0.5 truncate text-xs font-medium text-gray-700">{o.cliente}</div>
           )}
+          {o.proyecto && (
+            <div className="truncate text-xs text-gray-500">Proyecto: {o.proyecto}</div>
+          )}
           <div className="flex items-center gap-1 truncate text-xs text-gray-500">
             {o.repartidor ? (
               <>
@@ -313,50 +316,50 @@ export default async function OrdenesPage({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        {isRepartidor ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {isRepartidor && (
+            <div className="inline-flex rounded-xl bg-gray-100 p-1">
+              <Link
+                href="/ordenes"
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                  !verTodas ? "bg-white text-brand shadow-sm" : "text-gray-500"
+                }`}
+              >
+                <Truck className="h-4 w-4" strokeWidth={2.25} />
+                Mi ruta
+              </Link>
+              <Link
+                href="/ordenes?vista=todas"
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                  verTodas ? "bg-white text-brand shadow-sm" : "text-gray-500"
+                }`}
+              >
+                <Users className="h-4 w-4" strokeWidth={2.25} />
+                Toda la ruta
+              </Link>
+            </div>
+          )}
+
           <div className="inline-flex rounded-xl bg-gray-100 p-1">
             <Link
-              href="/ordenes"
+              href={hrefFormato("kanban")}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
-                !verTodas ? "bg-white text-brand shadow-sm" : "text-gray-500"
+                formato === "kanban" ? "bg-white text-brand shadow-sm" : "text-gray-500"
               }`}
             >
-              <Truck className="h-4 w-4" strokeWidth={2.25} />
-              Mi ruta
+              <LayoutGrid className="h-4 w-4" strokeWidth={2.25} />
+              Kanban
             </Link>
             <Link
-              href="/ordenes?vista=todas"
+              href={hrefFormato("tabla")}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
-                verTodas ? "bg-white text-brand shadow-sm" : "text-gray-500"
+                formato === "tabla" ? "bg-white text-brand shadow-sm" : "text-gray-500"
               }`}
             >
-              <Users className="h-4 w-4" strokeWidth={2.25} />
-              Toda la ruta
+              <Table2 className="h-4 w-4" strokeWidth={2.25} />
+              Tabla
             </Link>
           </div>
-        ) : (
-          <span />
-        )}
-
-        <div className="inline-flex rounded-xl bg-gray-100 p-1">
-          <Link
-            href={hrefFormato("kanban")}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
-              formato === "kanban" ? "bg-white text-brand shadow-sm" : "text-gray-500"
-            }`}
-          >
-            <LayoutGrid className="h-4 w-4" strokeWidth={2.25} />
-            Kanban
-          </Link>
-          <Link
-            href={hrefFormato("tabla")}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
-              formato === "tabla" ? "bg-white text-brand shadow-sm" : "text-gray-500"
-            }`}
-          >
-            <Table2 className="h-4 w-4" strokeWidth={2.25} />
-            Tabla
-          </Link>
         </div>
 
         {formato === "kanban" && (

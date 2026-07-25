@@ -140,6 +140,12 @@ export default async function OrdenDetallePage({
           <dt className="text-gray-400">{order.tipo === "recojo" ? "Proveedor" : "Cliente"}</dt>
           <dd className="break-words font-medium text-gray-800">{order.cliente || "—"}</dd>
         </div>
+        {order.proyecto && (
+          <div className="col-span-2 min-w-0">
+            <dt className="text-gray-400">Proyecto</dt>
+            <dd className="break-words font-medium text-gray-800">{order.proyecto}</dd>
+          </div>
+        )}
         <div className="min-w-0">
           <dt className="text-gray-400">Creada por</dt>
           <dd className="break-words font-medium text-gray-800">{order.creador?.full_name ?? "—"}</dd>

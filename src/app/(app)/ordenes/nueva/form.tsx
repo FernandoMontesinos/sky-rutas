@@ -100,6 +100,21 @@ export default function NuevaOrdenForm() {
         </div>
       </div>
 
+      {/* Proyecto (opcional, solo cuando se atiende a un Cliente) */}
+      {tipo === "entrega" && (
+        <div>
+          <label htmlFor="proyecto" className="mb-1 block text-sm font-medium text-gray-700">
+            Proyecto (opcional)
+          </label>
+          <input
+            id="proyecto"
+            name="proyecto"
+            placeholder="Ej. AREQUIPA, ANTAMINA INGENIERÍA"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+          />
+        </div>
+      )}
+
       {/* Compra a proveedor asociada (solo cuando es Cliente/entrega) */}
       {tipo === "entrega" && (
         <div>
