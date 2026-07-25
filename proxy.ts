@@ -1,6 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+// Ver nota en lib/supabase/client.ts: evita que la cookie de sesión se
+// trate como "de sesión del navegador" y se pierda al cerrar la app.
+const SESSION_MAX_AGE = 60 * 60 * 24 * 365 * 100;
+
 /**
  * Proxy (antes "middleware" en Next.js < 16).
  * Refresca la sesión de Supabase en cada request y protege las rutas:
@@ -13,6 +17,7 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: { maxAge: SESSION_MAX_AGE },
       cookies: {
         getAll() {
           return request.cookies.getAll();

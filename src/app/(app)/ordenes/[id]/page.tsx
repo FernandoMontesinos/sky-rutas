@@ -85,7 +85,7 @@ export default async function OrdenDetallePage({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto w-full max-w-2xl space-y-5">
       <Link
         href="/ordenes"
         className="inline-flex items-center gap-1 py-1 text-sm font-medium text-gray-500 hover:text-brand"

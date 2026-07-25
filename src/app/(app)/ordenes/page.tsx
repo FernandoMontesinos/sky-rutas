@@ -1,9 +1,14 @@
 import Link from "next/link";
-import { Plus, StickyNote, Truck, Users, LayoutGrid, Table2 } from "lucide-react";
+import { Plus, StickyNote, Truck, Users, LayoutGrid, Table2, Rows3, AlignLeft } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
 import type { OrderStatus, OrderWithNames } from "@/lib/types";
+
+/** Inicial para el avatar del repartidor en la vista compacta. */
+function inicial(nombre: string | undefined) {
+  return nombre?.trim()?.[0]?.toUpperCase() ?? "?";
+}
 
 const SELECT =
   "*, creador:profiles!orders_created_by_fkey(full_name), repartidor:profiles!orders_assigned_to_fkey(full_name)";
@@ -18,7 +23,61 @@ function fmtFecha(iso: string | null) {
   return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
 
-function OrderCard({ o }: { o: OrderWithNames }) {
+/**
+ * Vista compacta: lo mínimo para que almacén decida sin abrir la orden
+ * (N° pedido, cliente, tipo como ícono, repartidor como avatar, y el
+ * aviso de "Parcial" que nunca se oculta porque es información operativa).
+ * Sin miniatura, sin modalidad completa, sin "por creador" — eso vive
+ * solo en la vista detallada.
+ */
+function OrderCardCompact({ o }: { o: OrderWithNames }) {
+  const tipoStyle =
+    o.tipo === "entrega" ? "bg-brand/10 text-brand" : "bg-gray-800 text-white";
+
+  return (
+    <Link
+      href={`/ordenes/${o.id}`}
+      className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-2.5 py-2 shadow-sm transition hover:border-brand/40 hover:shadow"
+    >
+      <span
+        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${tipoStyle}`}
+        title={o.tipo === "entrega" ? "Entrega" : "Recojo"}
+      >
+        {o.tipo === "entrega" ? "E" : "R"}
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-sm font-bold text-gray-900">#{o.numero_pedido}</span>
+          {o.entrega_parcial && (
+            <span className="shrink-0 rounded-full bg-orange-100 px-1.5 py-0.5 text-[9px] font-bold text-orange-800">
+              Parcial
+            </span>
+          )}
+          {o.nota && (
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-400"
+              title="Tiene nota"
+              aria-label="Tiene nota"
+            />
+          )}
+        </div>
+        {o.cliente && <div className="truncate text-xs text-gray-500">{o.cliente}</div>}
+      </div>
+
+      {o.repartidor && (
+        <span
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand/10 text-[11px] font-bold text-brand"
+          title={o.repartidor.full_name}
+        >
+          {inicial(o.repartidor.full_name)}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+function OrderCardDetallado({ o }: { o: OrderWithNames }) {
   const imagenes = o.imagenes_urls?.length ? o.imagenes_urls : o.imagen_url ? [o.imagen_url] : [];
 
   return (
@@ -79,11 +138,13 @@ function Column({
   title,
   color,
   orders,
+  detallado,
   fullWidthMobile = false,
 }: {
   title: string;
   color: string;
   orders: OrderWithNames[];
+  detallado: boolean;
   /** En móvil ocupa todo el ancho (columnas apiladas) en vez de scroll lateral. */
   fullWidthMobile?: boolean;
 }) {
@@ -105,8 +166,10 @@ function Column({
       <div className="flex flex-col gap-2">
         {orders.length === 0 ? (
           <p className="px-1 py-4 text-center text-xs text-gray-400">—</p>
+        ) : detallado ? (
+          orders.map((o) => <OrderCardDetallado key={o.id} o={o} />)
         ) : (
-          orders.map((o) => <OrderCard key={o.id} o={o} />)
+          orders.map((o) => <OrderCardCompact key={o.id} o={o} />)
         )}
       </div>
     </div>
@@ -173,19 +236,32 @@ function TablaOrdenes({ orders }: { orders: OrderWithNames[] }) {
 export default async function OrdenesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ vista?: string; formato?: string }>;
+  searchParams: Promise<{ vista?: string; formato?: string; densidad?: string }>;
 }) {
   const { userId, profile } = await requireUser();
-  const { vista, formato: formatoParam } = await searchParams;
+  const { vista, formato: formatoParam, densidad: densidadParam } = await searchParams;
   const supabase = await createClient();
   const isRepartidor = profile.role === "repartidor";
   const verTodas = isRepartidor && vista === "todas";
   const formato = formatoParam === "tabla" ? "tabla" : "kanban";
+  // Compacto por defecto: es la vista pensada para decidir de un vistazo;
+  // detallado es la que ya existía, con imagen/modalidad/creador.
+  const detallado = densidadParam === "detallada";
 
   function hrefFormato(f: "kanban" | "tabla") {
     const params = new URLSearchParams();
     if (verTodas) params.set("vista", "todas");
     if (f === "tabla") params.set("formato", "tabla");
+    if (detallado) params.set("densidad", "detallada");
+    const qs = params.toString();
+    return qs ? `/ordenes?${qs}` : "/ordenes";
+  }
+
+  function hrefDensidad(d: "compacto" | "detallada") {
+    const params = new URLSearchParams();
+    if (verTodas) params.set("vista", "todas");
+    if (formato === "tabla") params.set("formato", "tabla");
+    if (d === "detallada") params.set("densidad", "detallada");
     const qs = params.toString();
     return qs ? `/ordenes?${qs}` : "/ordenes";
   }
@@ -282,15 +358,38 @@ export default async function OrdenesPage({
             Tabla
           </Link>
         </div>
+
+        {formato === "kanban" && (
+          <div className="inline-flex rounded-xl bg-gray-100 p-1">
+            <Link
+              href={hrefDensidad("compacto")}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                !detallado ? "bg-white text-brand shadow-sm" : "text-gray-500"
+              }`}
+            >
+              <Rows3 className="h-4 w-4" strokeWidth={2.25} />
+              Compacta
+            </Link>
+            <Link
+              href={hrefDensidad("detallada")}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                detallado ? "bg-white text-brand shadow-sm" : "text-gray-500"
+              }`}
+            >
+              <AlignLeft className="h-4 w-4" strokeWidth={2.25} />
+              Detallada
+            </Link>
+          </div>
+        )}
       </div>
 
       {formato === "tabla" ? (
         <TablaOrdenes orders={[...activasList, ...completadasList]} />
       ) : mostrarTodasLasColumnas ? (
         <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
-          <Column title="Pendientes" color="bg-gray-400" orders={byEstado("pendiente")} />
-          <Column title="Asignadas" color="bg-amber-500" orders={byEstado("asignado")} />
-          <Column title="Completadas · 2 días" color="bg-green-500" orders={completadasList} />
+          <Column title="Pendientes" color="bg-gray-400" orders={byEstado("pendiente")} detallado={detallado} />
+          <Column title="Asignadas" color="bg-amber-500" orders={byEstado("asignado")} detallado={detallado} />
+          <Column title="Completadas · 2 días" color="bg-green-500" orders={completadasList} detallado={detallado} />
         </div>
       ) : (
         /* Repartidor viendo solo lo suyo: columnas apiladas en móvil, sin scroll lateral */
@@ -299,12 +398,14 @@ export default async function OrdenesPage({
             title="Por hacer"
             color="bg-amber-500"
             orders={byEstado("asignado")}
+            detallado={detallado}
             fullWidthMobile
           />
           <Column
             title="Completadas · 2 días"
             color="bg-green-500"
             orders={completadasList}
+            detallado={detallado}
             fullWidthMobile
           />
         </div>

@@ -37,9 +37,14 @@ async function sendPushToUser(
   await Promise.all(
     subs.map(async (s) => {
       try {
+        // urgency "high" pide entrega inmediata al servicio push (FCM en
+        // Android/Chrome) en vez de esperar a que el celular salga de
+        // ahorro de batería/Doze — sin esto la notificación puede demorar
+        // minutos u horas en aparecer en la barra del sistema.
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth_key } },
-          body
+          body,
+          { urgency: "high" }
         );
       } catch (err) {
         // Suscripción vencida o inválida (celular desinstaló, permiso revocado, etc.)

@@ -40,7 +40,7 @@ function useActiveHref(items: NavEntry[]) {
 export function DesktopNav({ items }: { items: NavEntry[] }) {
   const active = useActiveHref(items);
   return (
-    <nav className="mx-auto hidden max-w-4xl gap-1 px-2 pb-2 sm:flex">
+    <nav className="hidden gap-1 px-2 pb-2 sm:flex sm:px-6 lg:px-8">
       {items.map((i) => {
         const Icon = ICONS[i.icon];
         return (

@@ -29,8 +29,14 @@ export default async function AppLayout({
   return (
     <div className="flex min-h-screen flex-col">
       <RealtimeRefresher />
+      {/*
+        El header es de ancho completo siempre (igual en toda página, angosta
+        o ancha) para que no quede como una caja flotando desalineada sobre
+        el contenido de las pantallas anchas (Órdenes/Mapa/Reportes). El
+        padding lateral responsivo evita que se vea pegado al borde.
+      */}
       <header className="sticky top-0 z-10 border-b border-gray-200 bg-white shadow-sm">
-        <div className="mx-auto flex max-w-4xl items-center gap-3 px-4 py-3">
+        <div className="flex items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
           <Link href="/" className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.png" alt="SkyHigh" className="h-8 w-auto" />
@@ -59,14 +65,20 @@ export default async function AppLayout({
         <DesktopNav items={items} />
 
         {profile.role === "repartidor" && (
-          <div className="mx-auto max-w-4xl px-4 pb-2">
+          <div className="px-4 pb-2 sm:px-6 lg:px-8">
             <LocationSharer />
           </div>
         )}
       </header>
 
-      {/* pb extra en móvil para que la barra inferior no tape el contenido */}
-      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 pb-24 sm:pb-6">
+      {/*
+        Ancho completo por defecto: Órdenes, Mapa y Reportes son pantallas
+        densas que deben usar todo el espacio disponible. Las páginas de
+        lectura/formulario (Inicio, Nueva orden, detalle de orden) se
+        angostan ellas mismas con su propio wrapper "max-w-4xl mx-auto".
+        pb extra en móvil para que la barra inferior no tape el contenido.
+      */}
+      <main className="w-full flex-1 px-4 py-6 pb-24 sm:px-6 sm:pb-6 lg:px-8">
         {children}
       </main>
 

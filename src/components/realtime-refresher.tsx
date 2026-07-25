@@ -10,12 +10,10 @@ import { createClient } from "@/lib/supabase/client";
  * abierta (ej. almacén viendo el tablero) vean el cambio sin recargar.
  * Sin esto, cada navegador solo ve datos frescos en su propia sesión.
  *
- * Nota (2026-07-15): la suscripción conecta (SUBSCRIBED) y queda
- * registrada en `realtime.subscription`, pero en pruebas locales no
- * llegó a entregar eventos de postgres_changes pese a permisos y
- * publicación correctos. Puede ser una demora de propagación de
- * Supabase tras activar la publicación recién hoy. Verificar en
- * producción antes de asumir que ya funciona.
+ * Confirmado funcionando (2026-07-22): probado en vivo con dos sesiones
+ * reales contra Supabase — un INSERT en `orders` llegó al tablero abierto
+ * sin recargar. La demora inicial reportada el 2026-07-15 era solo de
+ * propagación por ser la primera activación de Realtime en el proyecto.
  */
 export function RealtimeRefresher() {
   const router = useRouter();
