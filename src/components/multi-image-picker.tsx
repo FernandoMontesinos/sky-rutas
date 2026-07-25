@@ -1,16 +1,21 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Camera, ImagePlus, ClipboardPaste, X } from "lucide-react";
+import { Camera, ImagePlus, ClipboardPaste, X, FileText } from "lucide-react";
 import { compressImage } from "@/lib/compress-image";
 
 export type PickedImage = { file: File; preview: string };
 
+function esArchivoValido(f: File) {
+  return f.type.startsWith("image/") || f.type === "application/pdf";
+}
+
 /**
- * Selector de una o varias imágenes, con miniaturas y opción de quitar
- * cada una. En celular ofrece botones directos de cámara/galería; en PC
- * además admite pegar con Ctrl+V. Cada imagen se comprime antes de
- * agregarse a la lista (ver lib/compress-image.ts).
+ * Selector de una o varias imágenes o PDFs, con miniaturas y opción de
+ * quitar cada una (un PDF muestra un ícono en vez de vista previa). En
+ * celular ofrece botones directos de cámara/galería; en PC además admite
+ * pegar con Ctrl+V. Cada imagen se comprime antes de agregarse a la lista
+ * (ver lib/compress-image.ts); los PDF se suben sin tocar.
  */
 export function MultiImagePicker({
   label,
@@ -30,7 +35,7 @@ export function MultiImagePicker({
     if (!fileList || fileList.length === 0) return;
     const nuevas: PickedImage[] = [];
     for (const f of Array.from(fileList)) {
-      if (!f.type.startsWith("image/")) continue;
+      if (!esArchivoValido(f)) continue;
       const compressed = await compressImage(f);
       nuevas.push({ file: compressed, preview: URL.createObjectURL(compressed) });
     }
@@ -48,7 +53,7 @@ export function MultiImagePicker({
       if (!items) return;
       const files: File[] = [];
       for (const item of items) {
-        if (item.kind === "file" && item.type.startsWith("image/")) {
+        if (item.kind === "file" && (item.type.startsWith("image/") || item.type === "application/pdf")) {
           const f = item.getAsFile();
           if (f) files.push(f);
         }
@@ -76,12 +81,21 @@ export function MultiImagePicker({
         <div className="mb-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
           {images.map((img, i) => (
             <div key={i} className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={img.preview}
-                alt=""
-                className="h-20 w-full rounded-lg border border-gray-200 bg-white object-cover"
-              />
+              {img.file.type === "application/pdf" ? (
+                <div className="flex h-20 w-full flex-col items-center justify-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-1">
+                  <FileText className="h-6 w-6 text-gray-400" strokeWidth={1.75} />
+                  <span className="w-full truncate text-center text-[10px] text-gray-500">
+                    {img.file.name}
+                  </span>
+                </div>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={img.preview}
+                  alt=""
+                  className="h-20 w-full rounded-lg border border-gray-200 bg-white object-cover"
+                />
+              )}
               <button
                 type="button"
                 onClick={() => removeAt(i)}
@@ -112,7 +126,7 @@ export function MultiImagePicker({
         >
           <ImagePlus className="h-7 w-7" strokeWidth={1.75} />
           <span className="text-sm font-semibold">
-            {images.length > 0 ? "Agregar otra" : "Elegir imagen"}
+            {images.length > 0 ? "Agregar otra" : "Elegir imagen o PDF"}
           </span>
         </button>
       </div>
@@ -125,7 +139,7 @@ export function MultiImagePicker({
       >
         <ClipboardPaste className="h-7 w-7" strokeWidth={1.75} />
         <span className="font-medium">
-          {allowPaste ? "Pega una imagen aquí (Ctrl + V)" : "Toca para elegir imagen"}
+          {allowPaste ? "Pega una imagen o PDF aquí (Ctrl + V)" : "Toca para elegir imagen o PDF"}
         </span>
         <span className="text-sm">
           {images.length > 0 ? "o haz clic para agregar otra" : "o haz clic para elegir un archivo"}
@@ -135,7 +149,7 @@ export function MultiImagePicker({
       <input
         ref={galleryRef}
         type="file"
-        accept="image/*"
+        accept="image/*,application/pdf"
         multiple
         className="hidden"
         onChange={(e) => {

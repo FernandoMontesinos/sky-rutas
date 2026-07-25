@@ -46,7 +46,7 @@ export default function NuevaOrdenForm() {
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       <MultiImagePicker
-        label="Imágenes de la orden"
+        label="Imágenes o PDF de la orden"
         images={images}
         onChange={setImages}
         allowPaste

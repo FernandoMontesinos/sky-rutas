@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, StickyNote, Truck, Users, LayoutGrid, Table2, Rows3, AlignLeft } from "lucide-react";
+import { Plus, StickyNote, Truck, Users, LayoutGrid, Table2, Rows3, AlignLeft, FileText } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
@@ -21,6 +21,10 @@ function isoHaceDias(dias: number) {
 function fmtFecha(iso: string | null) {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
+function esPdfUrl(url: string) {
+  return url.split("?")[0].toLowerCase().endsWith(".pdf");
 }
 
 /**
@@ -88,12 +92,18 @@ function OrderCardDetallado({ o }: { o: OrderWithNames }) {
       <div className="flex gap-3">
         {imagenes[0] && (
           <div className="relative h-12 w-12 shrink-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={imagenes[0]}
-              alt=""
-              className="h-12 w-12 rounded-lg border border-gray-100 object-cover"
-            />
+            {esPdfUrl(imagenes[0]) ? (
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-gray-100 bg-gray-50">
+                <FileText className="h-5 w-5 text-gray-400" strokeWidth={1.75} />
+              </div>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={imagenes[0]}
+                alt=""
+                className="h-12 w-12 rounded-lg border border-gray-100 object-cover"
+              />
+            )}
             {imagenes.length > 1 && (
               <span className="absolute -bottom-1 -right-1 rounded-full bg-gray-800 px-1 text-[10px] font-bold text-white">
                 +{imagenes.length - 1}
