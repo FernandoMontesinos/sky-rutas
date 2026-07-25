@@ -1,9 +1,10 @@
-import { FileText } from "lucide-react";
+import { FileText, ExternalLink } from "lucide-react";
 
 function esPdf(url: string) {
   return url.split("?")[0].toLowerCase().endsWith(".pdf");
 }
 
+/** Miniatura para el caso de varios archivos en cuadrícula (poco espacio, no vale la pena embeber). */
 function PdfCard({ url, label }: { url: string; label: string }) {
   return (
     <a
@@ -18,13 +19,38 @@ function PdfCard({ url, label }: { url: string; label: string }) {
   );
 }
 
+/**
+ * Visor embebido para el caso de un solo PDF (el más común: una cotización
+ * u orden de compra). Usa el visor nativo del navegador dentro de un
+ * <iframe> — sin librerías nuevas. El link de arriba es respaldo para el
+ * caso en que el navegador (algunos Safari/iOS viejos) descargue el
+ * archivo en vez de mostrarlo inline.
+ */
+function PdfEmbed({ url, label }: { url: string; label: string }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 transition hover:text-brand"
+      >
+        <FileText className="h-4 w-4 shrink-0 text-gray-400" strokeWidth={1.75} />
+        <span className="flex-1 truncate">{label}</span>
+        <ExternalLink className="h-3.5 w-3.5 shrink-0 text-gray-400" strokeWidth={2} />
+      </a>
+      <iframe src={url} title={label} className="h-[70vh] w-full" />
+    </div>
+  );
+}
+
 /** Cuadrícula simple de imágenes/PDFs con enlace a tamaño completo en pestaña nueva. */
 export function ImageGallery({ urls, alt }: { urls: string[]; alt: string }) {
   if (urls.length === 0) return null;
 
   if (urls.length === 1) {
     return esPdf(urls[0]) ? (
-      <PdfCard url={urls[0]} label={`Ver ${alt} (PDF)`} />
+      <PdfEmbed url={urls[0]} label={`${alt} (PDF)`} />
     ) : (
       // eslint-disable-next-line @next/next/no-img-element
       <img
