@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { notify, userIdsByRole } from "@/lib/notify";
 
 export type FormResult = { error?: string; ok?: boolean };
 
@@ -13,7 +14,27 @@ function extFromType(type: string, fallback: string) {
   return ext === "jpeg" ? "jpg" : ext;
 }
 
-/** Vendedor/Admin crea una orden subiendo la imagen pegada. */
+/** Sube varios archivos a un bucket y devuelve sus URLs públicas, en orden. */
+async function uploadMany(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  bucket: string,
+  folder: string,
+  files: File[]
+): Promise<{ urls: string[]; error?: string }> {
+  const urls: string[] = [];
+  for (const f of files) {
+    const path = `${folder}/${Date.now()}-${urls.length}.${extFromType(f.type, "jpg")}`;
+    const { error } = await supabase.storage
+      .from(bucket)
+      .upload(path, f, { contentType: f.type, upsert: false });
+    if (error) return { urls, error: error.message };
+    const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path);
+    urls.push(pub.publicUrl);
+  }
+  return { urls };
+}
+
+/** Vendedor/Admin crea una orden con una o más imágenes. */
 export async function createOrder(
   _prev: FormResult,
   formData: FormData
@@ -22,36 +43,59 @@ export async function createOrder(
 
   const numero = String(formData.get("numero_pedido") ?? "").trim();
   const cliente = String(formData.get("cliente") ?? "").trim() || null;
+  const proyecto = String(formData.get("proyecto") ?? "").trim() || null;
   const tipo = String(formData.get("tipo") ?? "");
+  const modalidad = String(formData.get("modalidad") ?? "reparto");
+  const courierTracking = String(formData.get("courier_tracking") ?? "").trim() || null;
+  // Proveedor/pedido de compra: solo aplica a una entrega (venta) que además
+  // requirió comprarle a un proveedor. En un recojo, ya se usa cliente/numero
+  // como proveedor/pedido (ver etiquetas dinámicas en el formulario).
+  const proveedor = String(formData.get("proveedor") ?? "").trim() || null;
+  const numeroPedidoCompra = String(formData.get("numero_pedido_compra") ?? "").trim() || null;
   const nota = String(formData.get("nota") ?? "").trim() || null;
-  const imagen = formData.get("imagen") as File | null;
+  const imagenes = formData.getAll("imagenes").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!numero) return { error: "Ingresa el número de pedido." };
   if (tipo !== "entrega" && tipo !== "recojo")
-    return { error: "Selecciona si es ENTREGA o RECOJO." };
-  if (!imagen || imagen.size === 0)
-    return { error: "Agrega la imagen de la orden (pégala o toma una foto)." };
+    return { error: "Selecciona si es CLIENTE o PROVEEDOR." };
+  if (!["reparto", "oficina", "courier"].includes(modalidad))
+    return { error: "Modalidad de entrega inválida." };
+  if (imagenes.length === 0)
+    return { error: "Agrega al menos una imagen de la orden (pégala o toma una foto)." };
 
   const supabase = await createClient();
-  const path = `${userId}/${Date.now()}.${extFromType(imagen.type, "png")}`;
+  const { urls, error: upErr } = await uploadMany(supabase, "ordenes", userId, imagenes);
+  if (upErr) return { error: "No se pudo subir la imagen: " + upErr };
 
-  const { error: upErr } = await supabase.storage
-    .from("ordenes")
-    .upload(path, imagen, { contentType: imagen.type, upsert: false });
-  if (upErr) return { error: "No se pudo subir la imagen: " + upErr.message };
-
-  const { data: pub } = supabase.storage.from("ordenes").getPublicUrl(path);
-
-  const { error: insErr } = await supabase.from("orders").insert({
-    numero_pedido: numero,
-    cliente,
-    tipo,
-    nota,
-    imagen_url: pub.publicUrl,
-    created_by: userId,
-    estado: "pendiente",
-  });
+  const { data: inserted, error: insErr } = await supabase
+    .from("orders")
+    .insert({
+      numero_pedido: numero,
+      cliente,
+      // El proyecto solo tiene sentido cuando se atiende a un cliente (venta).
+      proyecto: tipo === "entrega" ? proyecto : null,
+      tipo,
+      modalidad,
+      courier_tracking: modalidad === "courier" ? courierTracking : null,
+      proveedor: tipo === "entrega" ? proveedor : null,
+      numero_pedido_compra: tipo === "entrega" ? numeroPedidoCompra : null,
+      nota,
+      imagen_url: urls[0] ?? null,
+      imagenes_urls: urls,
+      created_by: userId,
+      estado: "pendiente",
+    })
+    .select("id")
+    .single();
   if (insErr) return { error: insErr.message };
+
+  const almacenIds = await userIdsByRole("almacen");
+  await notify(almacenIds, {
+    tipo: "orden_pendiente",
+    titulo: "Nueva orden pendiente",
+    mensaje: `#${numero}${cliente ? " · " + cliente : ""} — falta asignar repartidor.`,
+    orderId: inserted.id,
+  });
 
   revalidatePath("/ordenes");
   redirect("/ordenes");
@@ -73,14 +117,25 @@ export async function assignOrder(formData: FormData): Promise<void> {
       .update({ assigned_to: null, estado: "pendiente", assigned_at: null })
       .eq("id", orderId);
   } else {
-    await supabase
+    const { data: updated } = await supabase
       .from("orders")
       .update({
         assigned_to: repartidorId,
         estado: "asignado",
         assigned_at: new Date().toISOString(),
       })
-      .eq("id", orderId);
+      .eq("id", orderId)
+      .select("numero_pedido, cliente")
+      .single();
+
+    if (updated) {
+      await notify([repartidorId], {
+        tipo: "orden_asignada",
+        titulo: "Te asignaron una orden",
+        mensaje: `#${updated.numero_pedido}${updated.cliente ? " · " + updated.cliente : ""}`,
+        orderId,
+      });
+    }
   }
 
   revalidatePath(`/ordenes/${orderId}`);
@@ -110,8 +165,9 @@ export async function updateModalidad(formData: FormData): Promise<void> {
   revalidatePath("/ordenes");
 }
 
-/** Sube la foto de la guía/comprobante y marca la orden como completada.
- *  Repartidor: solo sus órdenes. Almacén/Admin: cualquiera (oficina/courier). */
+/** Sube una o más fotos de la guía/comprobante y marca la orden como
+ *  completada (total o parcial). Repartidor: solo sus órdenes propias.
+ *  Almacén/Admin: cualquiera (oficina/courier). */
 export async function completeOrder(
   _prev: FormResult,
   formData: FormData
@@ -119,33 +175,96 @@ export async function completeOrder(
   await requireRole(["repartidor", "almacen", "admin"]);
 
   const orderId = String(formData.get("order_id") ?? "");
-  const guia = formData.get("guia") as File | null;
+  const parcial = String(formData.get("entrega_parcial") ?? "") === "true";
+  const notaFaltante = String(formData.get("nota_faltante") ?? "").trim();
+  const guias = formData.getAll("guias").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!orderId) return { error: "Orden inválida." };
-  if (!guia || guia.size === 0)
-    return { error: "Toma la foto de la guía antes de confirmar." };
+  if (guias.length === 0)
+    return { error: "Toma al menos una foto de la guía antes de confirmar." };
+  if (parcial && !notaFaltante)
+    return { error: "Cuéntanos qué falta completar." };
 
   const supabase = await createClient();
-  const path = `${orderId}/${Date.now()}.${extFromType(guia.type, "jpg")}`;
+  const { urls, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
+  if (upErr) return { error: "No se pudo subir la foto: " + upErr };
 
-  const { error: upErr } = await supabase.storage
-    .from("guias")
-    .upload(path, guia, { contentType: guia.type, upsert: false });
-  if (upErr) return { error: "No se pudo subir la foto: " + upErr.message };
-
-  const { data: pub } = supabase.storage.from("guias").getPublicUrl(path);
-
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("orders")
     .update({
-      guia_url: pub.publicUrl,
+      guia_url: urls[0] ?? null,
+      guias_urls: urls,
+      entrega_parcial: parcial,
       estado: "completado",
       completed_at: new Date().toISOString(),
     })
-    .eq("id", orderId);
+    .eq("id", orderId)
+    .select(
+      "numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, tipo, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by"
+    )
+    .single();
   if (error) return { error: error.message };
 
+  let backorderId: string | null = null;
+
+  // Backorder: si quedó parcial, se crea automáticamente un pedido nuevo
+  // solo por lo que falta (mismo patrón que usa Odoo para entregas
+  // parciales) — el original queda como registro histórico intacto de
+  // lo que sí se completó, y el remanente sigue su propio flujo desde
+  // "pendiente" para que almacén lo asigne cuando corresponda.
+  if (parcial && updated) {
+    const { count } = await supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("parent_order_id", orderId);
+    const sufijo = `-R${(count ?? 0) + 1}`;
+
+    const { data: backorder, error: boErr } = await supabase
+      .from("orders")
+      .insert({
+        numero_pedido: `${updated.numero_pedido}${sufijo}`,
+        cliente: updated.cliente,
+        proyecto: updated.proyecto,
+        proveedor: updated.proveedor,
+        numero_pedido_compra: updated.numero_pedido_compra,
+        tipo: updated.tipo,
+        modalidad: updated.modalidad,
+        courier_tracking: updated.courier_tracking,
+        imagen_url: updated.imagen_url,
+        imagenes_urls: updated.imagenes_urls,
+        nota: notaFaltante,
+        created_by: updated.created_by,
+        parent_order_id: orderId,
+        estado: "pendiente",
+      })
+      .select("id")
+      .single();
+    if (!boErr && backorder) backorderId = backorder.id;
+  }
+
+  if (updated?.created_by) {
+    await notify([updated.created_by], {
+      tipo: parcial ? "orden_parcial" : "orden_completada",
+      titulo: parcial ? "Orden completada parcialmente" : "Orden completada",
+      mensaje: `#${updated.numero_pedido}${updated.cliente ? " · " + updated.cliente : ""}${
+        parcial ? " — falta terminar el resto." : ""
+      }`,
+      orderId,
+    });
+  }
+
+  if (backorderId) {
+    const almacenIds = await userIdsByRole("almacen");
+    await notify(almacenIds, {
+      tipo: "orden_pendiente",
+      titulo: "Pedido pendiente por entrega parcial",
+      mensaje: `#${updated!.numero_pedido} quedó parcial — falta asignar el remanente.`,
+      orderId: backorderId,
+    });
+  }
+
   revalidatePath(`/ordenes/${orderId}`);
+  if (backorderId) revalidatePath(`/ordenes/${backorderId}`);
   revalidatePath("/ordenes");
   redirect("/ordenes");
 }

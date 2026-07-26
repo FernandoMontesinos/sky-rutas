@@ -63,8 +63,8 @@ export default async function MapaPage() {
 
       {markers.length === 0 && (
         <p className="rounded-xl border border-dashed border-gray-300 bg-white p-4 text-sm text-gray-500">
-          Aún no hay ubicaciones. Los repartidores deben entrar a su ruta y tocar
-          <b> Activar</b> en “Compartir mi ubicación”.
+          Aún no hay ubicaciones. La ubicación se comparte automáticamente cuando un
+          repartidor abre la app y acepta el permiso de ubicación en su celular.
         </p>
       )}
 

@@ -16,6 +16,9 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: "#dc2626",
+  // Permite que la barra de navegación inferior respete el área segura
+  // de los teléfonos con notch (env(safe-area-inset-bottom)).
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
