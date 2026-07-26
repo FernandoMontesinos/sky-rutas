@@ -3,7 +3,7 @@ import { Plus, StickyNote, Truck, Users, LayoutGrid, Table2, Rows3, AlignLeft, F
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
-import type { OrderStatus, OrderWithNames } from "@/lib/types";
+import { MODALIDAD_SHORT, type OrderStatus, type OrderWithNames } from "@/lib/types";
 
 /** Inicial para el avatar del repartidor en la vista compacta. */
 function inicial(nombre: string | undefined) {
@@ -18,9 +18,12 @@ function isoHaceDias(dias: number) {
   return new Date(Date.now() - dias * 86_400_000).toISOString();
 }
 
-function fmtFecha(iso: string | null) {
+function fmtFechaHora(iso: string | null) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  const d = new Date(iso);
+  const fecha = d.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  const hora = d.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
+  return `${fecha} · ${hora}`;
 }
 
 function esPdfUrl(url: string) {
@@ -206,11 +209,12 @@ function TablaOrdenes({ orders }: { orders: OrderWithNames[] }) {
             <tr>
               <th className="px-3 py-2 font-medium">N° pedido</th>
               <th className="px-3 py-2 font-medium">Cliente / Proveedor</th>
+              <th className="px-3 py-2 font-medium">Fecha de creación</th>
+              <th className="px-3 py-2 font-medium">Creado por</th>
               <th className="px-3 py-2 font-medium">Tipo</th>
               <th className="px-3 py-2 font-medium">Modalidad</th>
               <th className="px-3 py-2 font-medium">Estado</th>
               <th className="px-3 py-2 font-medium">Repartidor</th>
-              <th className="px-3 py-2 font-medium">Fecha</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -222,20 +226,19 @@ function TablaOrdenes({ orders }: { orders: OrderWithNames[] }) {
                   </Link>
                 </td>
                 <td className="max-w-[180px] truncate px-3 py-2 text-gray-700">{o.cliente || "—"}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-gray-500">{fmtFechaHora(o.created_at)}</td>
+                <td className="max-w-[140px] truncate px-3 py-2 text-gray-600">
+                  {o.creador?.full_name ?? "—"}
+                </td>
                 <td className="px-3 py-2">
                   <TypeBadge tipo={o.tipo} />
                 </td>
-                <td className="px-3 py-2">
-                  <ModalidadBadge modalidad={o.modalidad} />
-                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-gray-600">{MODALIDAD_SHORT[o.modalidad]}</td>
                 <td className="px-3 py-2">
                   <StatusBadge estado={o.estado} parcial={o.entrega_parcial} />
                 </td>
                 <td className="max-w-[140px] truncate px-3 py-2 text-gray-600">
                   {o.repartidor?.full_name ?? "—"}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2 text-gray-500">
-                  {fmtFecha(o.estado === "completado" ? o.completed_at : o.created_at)}
                 </td>
               </tr>
             ))}

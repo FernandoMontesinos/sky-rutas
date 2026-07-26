@@ -39,7 +39,14 @@ function PdfEmbed({ url, label }: { url: string; label: string }) {
         <span className="flex-1 truncate">{label}</span>
         <ExternalLink className="h-3.5 w-3.5 shrink-0 text-gray-400" strokeWidth={2} />
       </a>
-      <iframe src={url} title={label} className="h-[70vh] w-full" />
+      {/* toolbar=0/navpanes=0: oculta la barra de herramientas y el panel
+          de miniaturas del visor nativo (Chrome/Edge lo respetan) para que
+          se vea solo el contenido de la página, sin perder ancho. */}
+      <iframe
+        src={`${url}#toolbar=0&navpanes=0&view=FitH`}
+        title={label}
+        className="h-[70vh] w-full"
+      />
     </div>
   );
 }
