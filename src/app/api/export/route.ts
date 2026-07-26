@@ -36,15 +36,6 @@ const COLUMNAS: Columna[] = [
   { header: "Fecha de creación", width: 18, valor: (r) => fechaHoraLima(r.created_at) },
   { header: "Fecha de asignación", width: 18, valor: (r) => fechaHoraLima(r.assigned_at) },
   { header: "Fecha de completado", width: 18, valor: (r) => fechaHoraLima(r.completed_at) },
-  { header: "Nota", width: 44, valor: (r) => r.nota ?? "" },
-  {
-    header: "Documentos",
-    width: 50,
-    valor: (r) => {
-      const urls = r.imagenes_urls?.length ? r.imagenes_urls : r.imagen_url ? [r.imagen_url] : [];
-      return urls.join(" | ");
-    },
-  },
 ];
 
 export async function GET(request: NextRequest) {
