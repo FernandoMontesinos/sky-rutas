@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { KeyRound } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { ROLE_LABEL, type UserRole } from "@/lib/types";
 import { LocationSharer } from "@/components/location-sharer";
@@ -51,6 +52,14 @@ export default async function AppLayout({
               <span className="hidden sm:inline"> · {ROLE_LABEL[profile.role]}</span>
             </span>
             <NotificationBell userId={userId} />
+            <Link
+              href="/cuenta"
+              aria-label="Mi cuenta"
+              title="Mi cuenta"
+              className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-brand"
+            >
+              <KeyRound className="h-5 w-5" strokeWidth={2.25} />
+            </Link>
             <form action={signOut}>
               <button
                 type="submit"

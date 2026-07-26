@@ -3,6 +3,7 @@ import { Plus, StickyNote, Truck, Users, LayoutGrid, Table2, Rows3, AlignLeft, F
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
+import { ymdLima } from "@/lib/reportes";
 import { MODALIDAD_SHORT, type OrderStatus, type OrderWithNames } from "@/lib/types";
 
 /** Inicial para el avatar del repartidor en la vista compacta. */
@@ -16,6 +17,20 @@ const SELECT =
 /** ISO de hace N días (fuera del componente para cumplir la regla de pureza de React). */
 function isoHaceDias(dias: number) {
   return new Date(Date.now() - dias * 86_400_000).toISOString();
+}
+
+type RangoCompletadas = "hoy" | "semana" | "mes";
+
+const RANGO_LABEL: Record<RangoCompletadas, string> = {
+  hoy: "Hoy",
+  semana: "Últimos 7 días",
+  mes: "Últimos 30 días",
+};
+
+/** Desde cuándo mirar las completadas, según el rango elegido. */
+function desdeParaRango(rango: RangoCompletadas) {
+  if (rango === "hoy") return `${ymdLima(new Date())}T00:00:00-05:00`;
+  return isoHaceDias(rango === "semana" ? 7 : 30);
 }
 
 function fmtFechaHora(iso: string | null) {
@@ -252,10 +267,11 @@ function TablaOrdenes({ orders }: { orders: OrderWithNames[] }) {
 export default async function OrdenesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ vista?: string; formato?: string; densidad?: string }>;
+  searchParams: Promise<{ vista?: string; formato?: string; densidad?: string; rango?: string }>;
 }) {
   const { userId, profile } = await requireUser();
-  const { vista, formato: formatoParam, densidad: densidadParam } = await searchParams;
+  const { vista, formato: formatoParam, densidad: densidadParam, rango: rangoParam } =
+    await searchParams;
   const supabase = await createClient();
   const isRepartidor = profile.role === "repartidor";
   const verTodas = isRepartidor && vista === "todas";
@@ -263,12 +279,15 @@ export default async function OrdenesPage({
   // Compacto por defecto: es la vista pensada para decidir de un vistazo;
   // detallado es la que ya existía, con imagen/modalidad/creador.
   const detallado = densidadParam === "detallada";
+  const rango: RangoCompletadas =
+    rangoParam === "semana" || rangoParam === "mes" ? rangoParam : "hoy";
 
   function hrefFormato(f: "kanban" | "tabla") {
     const params = new URLSearchParams();
     if (verTodas) params.set("vista", "todas");
     if (f === "tabla") params.set("formato", "tabla");
     if (detallado) params.set("densidad", "detallada");
+    if (rango !== "hoy") params.set("rango", rango);
     const qs = params.toString();
     return qs ? `/ordenes?${qs}` : "/ordenes";
   }
@@ -278,24 +297,33 @@ export default async function OrdenesPage({
     if (verTodas) params.set("vista", "todas");
     if (formato === "tabla") params.set("formato", "tabla");
     if (d === "detallada") params.set("densidad", "detallada");
+    if (rango !== "hoy") params.set("rango", rango);
     const qs = params.toString();
     return qs ? `/ordenes?${qs}` : "/ordenes";
   }
 
-  // Activas (pendiente + asignado) y completadas (recientes).
+  function hrefRango(r: RangoCompletadas) {
+    const params = new URLSearchParams();
+    if (verTodas) params.set("vista", "todas");
+    if (formato === "tabla") params.set("formato", "tabla");
+    if (detallado) params.set("densidad", "detallada");
+    if (r !== "hoy") params.set("rango", r);
+    const qs = params.toString();
+    return qs ? `/ordenes?${qs}` : "/ordenes";
+  }
+
+  // Activas (pendiente + asignado) y completadas (según el rango elegido).
   let activas = supabase
     .from("orders")
     .select(SELECT)
     .in("estado", ["pendiente", "asignado"])
     .order("created_at", { ascending: false });
 
-  // Solo completadas de los últimos 2 días para no sobrecargar el tablero.
-  const desde2dias = isoHaceDias(2);
   let completadas = supabase
     .from("orders")
     .select(SELECT)
     .eq("estado", "completado")
-    .gte("completed_at", desde2dias)
+    .gte("completed_at", desdeParaRango(rango))
     .order("completed_at", { ascending: false })
     .limit(100);
 
@@ -399,13 +427,35 @@ export default async function OrdenesPage({
         )}
       </div>
 
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-gray-500">Completadas:</span>
+        <div className="inline-flex rounded-xl bg-gray-100 p-1">
+          {(["hoy", "semana", "mes"] as RangoCompletadas[]).map((r) => (
+            <Link
+              key={r}
+              href={hrefRango(r)}
+              className={`rounded-lg px-3 py-1 font-semibold transition ${
+                rango === r ? "bg-white text-brand shadow-sm" : "text-gray-500"
+              }`}
+            >
+              {RANGO_LABEL[r]}
+            </Link>
+          ))}
+        </div>
+      </div>
+
       {formato === "tabla" ? (
         <TablaOrdenes orders={[...activasList, ...completadasList]} />
       ) : mostrarTodasLasColumnas ? (
         <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
           <Column title="Pendientes" color="bg-gray-400" orders={byEstado("pendiente")} detallado={detallado} />
           <Column title="Asignadas" color="bg-amber-500" orders={byEstado("asignado")} detallado={detallado} />
-          <Column title="Completadas · 2 días" color="bg-green-500" orders={completadasList} detallado={detallado} />
+          <Column
+            title={`Completadas · ${RANGO_LABEL[rango]}`}
+            color="bg-green-500"
+            orders={completadasList}
+            detallado={detallado}
+          />
         </div>
       ) : (
         /* Repartidor viendo solo lo suyo: columnas apiladas en móvil, sin scroll lateral */
@@ -418,7 +468,7 @@ export default async function OrdenesPage({
             fullWidthMobile
           />
           <Column
-            title="Completadas · 2 días"
+            title={`Completadas · ${RANGO_LABEL[rango]}`}
             color="bg-green-500"
             orders={completadasList}
             detallado={detallado}

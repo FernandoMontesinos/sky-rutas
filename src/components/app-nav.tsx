@@ -2,7 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, PackagePlus, ClipboardList, Map, BarChart3, Users, type LucideIcon } from "lucide-react";
+import {
+  Home,
+  PackagePlus,
+  ClipboardList,
+  Map,
+  BarChart3,
+  Users,
+  KeyRound,
+  type LucideIcon,
+} from "lucide-react";
 
 /** Registro de íconos por nombre: un Server Component no puede pasarle un
  *  componente (función) a uno de cliente, así que aquí solo viaja un string
@@ -14,6 +23,7 @@ const ICONS: Record<string, LucideIcon> = {
   map: Map,
   "bar-chart": BarChart3,
   users: Users,
+  "key-round": KeyRound,
 };
 
 export type NavEntry = {
