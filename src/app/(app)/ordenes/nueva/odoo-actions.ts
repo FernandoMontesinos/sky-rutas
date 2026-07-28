@@ -7,7 +7,6 @@ export type BuscarCotizacionResult =
   | {
       ok: true;
       cliente: string;
-      montoTotal: number;
       estado: string;
       proyecto: string | null;
       pdfBase64: string | null;
@@ -28,7 +27,6 @@ export async function buscarCotizacionOdoo(numero: string): Promise<BuscarCotiza
     return {
       ok: true,
       cliente: cotizacion.cliente,
-      montoTotal: cotizacion.montoTotal,
       estado: cotizacion.estado,
       proyecto: cotizacion.proyecto,
       pdfBase64: cotizacion.pdf?.base64 ?? null,

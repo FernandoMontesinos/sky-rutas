@@ -16,7 +16,6 @@ export type CompraCandidato = { proveedor: string; numeroPedido: string };
 export type CotizacionOdoo = {
   numero: string;
   cliente: string;
-  montoTotal: number;
   estado: string;
   proyecto: string | null;
   pdf: { base64: string; nombreArchivo: string } | null;
@@ -116,7 +115,7 @@ export async function buscarCotizacion(numero: string): Promise<CotizacionOdoo |
       method: "search_read",
       args: [[["name", "=ilike", numeroLimpio]]],
       kwargs: {
-        fields: ["id", "name", "state", "partner_id", "amount_total", "project_id"],
+        fields: ["id", "name", "state", "partner_id", "project_id"],
         limit: 1,
       },
     },
@@ -128,7 +127,6 @@ export async function buscarCotizacion(numero: string): Promise<CotizacionOdoo |
       id: number;
       name: string;
       partner_id: [number, string] | false;
-      amount_total: number;
       state: string;
       project_id: [number, string] | false;
     }>
@@ -145,7 +143,6 @@ export async function buscarCotizacion(numero: string): Promise<CotizacionOdoo |
   return {
     numero: cotizacion.name,
     cliente: cotizacion.partner_id ? cotizacion.partner_id[1] : "",
-    montoTotal: cotizacion.amount_total,
     estado: ESTADO_LABEL[cotizacion.state] ?? cotizacion.state,
     proyecto: cotizacion.project_id ? cotizacion.project_id[1] : null,
     pdf: pdfResult.status === "fulfilled" ? pdfResult.value : null,

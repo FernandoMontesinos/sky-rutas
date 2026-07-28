@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState, startTransition } from "react";
+import { FileText } from "lucide-react";
 import { createOrder, type FormResult } from "../actions";
 import { buscarCotizacionOdoo } from "./odoo-actions";
 import type { CompraCandidato } from "@/lib/odoo";
@@ -33,6 +34,15 @@ export default function NuevaOrdenForm() {
     | { estado: "error"; mensaje: string }
     | null
   >(null);
+  const [odooPdfPreviewUrl, setOdooPdfPreviewUrl] = useState<string | null>(null);
+
+  // El blob URL del PDF es un recurso del navegador — hay que liberarlo al
+  // reemplazarlo por uno nuevo (otra búsqueda) o al salir de la página.
+  useEffect(() => {
+    return () => {
+      if (odooPdfPreviewUrl) URL.revokeObjectURL(odooPdfPreviewUrl);
+    };
+  }, [odooPdfPreviewUrl]);
 
   // El bloque de Proveedor/N° de pedido solo se monta cuando requiereCompra
   // pasa a true, así que no se puede escribir en sus refs en el mismo tick
@@ -81,6 +91,7 @@ export default function NuevaOrdenForm() {
           return [...sinAnterior, { file, preview: "" }];
         });
         lastOdooFileRef.current = file;
+        setOdooPdfPreviewUrl(URL.createObjectURL(file));
         detalles.push({ texto: "PDF de la cotización adjuntado automáticamente." });
       } catch (err) {
         console.error("No se pudo adjuntar el PDF de Odoo:", err);
@@ -131,7 +142,7 @@ export default function NuevaOrdenForm() {
 
     setOdoo({
       estado: "ok",
-      resumen: `${res.cliente} — S/ ${res.montoTotal.toFixed(2)} — ${res.estado}`,
+      resumen: `${res.cliente} — ${res.estado}`,
       detalles,
     });
   }
@@ -214,6 +225,22 @@ export default function NuevaOrdenForm() {
           </div>
         )}
       </div>
+
+      {/* Vista previa del PDF que trajo Odoo, para confirmar de un vistazo
+          que es la cotización correcta antes de guardar. */}
+      {odooPdfPreviewUrl && (
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+          <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700">
+            <FileText className="h-4 w-4 shrink-0 text-gray-400" strokeWidth={1.75} />
+            <span className="flex-1 truncate">Vista previa de la cotización</span>
+          </div>
+          <iframe
+            src={`${odooPdfPreviewUrl}#toolbar=0&navpanes=0&view=FitH`}
+            title="Vista previa de la cotización"
+            className="h-96 w-full"
+          />
+        </div>
+      )}
 
       {/* Cliente / Proveedor (etiqueta según el tipo elegido) */}
       <div>
