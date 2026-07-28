@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useRef, useState, startTransition } from "react";
+import { useActionState, useEffect, useRef, useState, startTransition } from "react";
 import { createOrder, type FormResult } from "../actions";
 import { buscarCotizacionOdoo } from "./odoo-actions";
+import type { CompraCandidato } from "@/lib/odoo";
 import { MultiImagePicker, type PickedImage } from "@/components/multi-image-picker";
 import { modalidadLabel, type Modalidad, type OrderType } from "@/lib/types";
 
@@ -20,9 +21,30 @@ export default function NuevaOrdenForm() {
   const [localError, setLocalError] = useState<string | null>(null);
   const numeroRef = useRef<HTMLInputElement>(null);
   const clienteRef = useRef<HTMLInputElement>(null);
+  const proyectoRef = useRef<HTMLInputElement>(null);
+  const proveedorRef = useRef<HTMLInputElement>(null);
+  const numeroPedidoCompraRef = useRef<HTMLInputElement>(null);
+  const lastOdooFileRef = useRef<File | null>(null);
+  const odooCompraPendienteRef = useRef<CompraCandidato | null>(null);
+  const lastAutoFilledCompraRef = useRef<CompraCandidato | null>(null);
   const [odoo, setOdoo] = useState<
-    { estado: "buscando" } | { estado: "ok"; mensaje: string } | { estado: "error"; mensaje: string } | null
+    | { estado: "buscando" }
+    | { estado: "ok"; resumen: string; detalles: { texto: string; alerta?: boolean }[] }
+    | { estado: "error"; mensaje: string }
+    | null
   >(null);
+
+  // El bloque de Proveedor/N° de pedido solo se monta cuando requiereCompra
+  // pasa a true, así que no se puede escribir en sus refs en el mismo tick
+  // que setRequiereCompra(true) — se completa un render después, acá.
+  useEffect(() => {
+    if (requiereCompra && odooCompraPendienteRef.current) {
+      if (proveedorRef.current) proveedorRef.current.value = odooCompraPendienteRef.current.proveedor;
+      if (numeroPedidoCompraRef.current)
+        numeroPedidoCompraRef.current.value = odooCompraPendienteRef.current.numeroPedido;
+      odooCompraPendienteRef.current = null;
+    }
+  }, [requiereCompra]);
 
   async function buscarEnOdoo() {
     const numero = numeroRef.current?.value.trim() ?? "";
@@ -36,10 +58,81 @@ export default function NuevaOrdenForm() {
       setOdoo({ estado: "error", mensaje: res.error });
       return;
     }
+
     if (clienteRef.current) clienteRef.current.value = res.cliente;
+    if (proyectoRef.current) proyectoRef.current.value = res.proyecto ?? "";
+
+    const detalles: { texto: string; alerta?: boolean }[] = [];
+
+    if (res.proyecto) detalles.push({ texto: `Proyecto: ${res.proyecto}` });
+
+    if (res.pdfBase64 && res.pdfNombreArchivo) {
+      try {
+        const bytes = Uint8Array.from(atob(res.pdfBase64), (c) => c.charCodeAt(0));
+        const file = new File([bytes], res.pdfNombreArchivo, { type: "application/pdf" });
+        // Ojo: hay que capturar el archivo anterior en una variable ANTES de
+        // reasignar el ref. El callback de setImages corre en un tick
+        // posterior (diferido por React); si se leyera lastOdooFileRef.current
+        // directamente ahí adentro, ya tendría el archivo nuevo (por la
+        // reasignación de abajo) y el filtro nunca encontraría el anterior.
+        const archivoAnterior = lastOdooFileRef.current;
+        setImages((prev) => {
+          const sinAnterior = archivoAnterior ? prev.filter((img) => img.file !== archivoAnterior) : prev;
+          return [...sinAnterior, { file, preview: "" }];
+        });
+        lastOdooFileRef.current = file;
+        detalles.push({ texto: "PDF de la cotización adjuntado automáticamente." });
+      } catch (err) {
+        console.error("No se pudo adjuntar el PDF de Odoo:", err);
+      }
+    }
+
+    if (res.compraCandidatos.length === 1) {
+      const [candidato] = res.compraCandidatos;
+      if (requiereCompra) {
+        // El bloque ya está montado (de una búsqueda anterior o marcado a
+        // mano) — escribir directo, el efecto no se dispara si el booleano
+        // no cambia de valor.
+        if (proveedorRef.current) proveedorRef.current.value = candidato.proveedor;
+        if (numeroPedidoCompraRef.current) numeroPedidoCompraRef.current.value = candidato.numeroPedido;
+      } else {
+        odooCompraPendienteRef.current = candidato;
+        setRequiereCompra(true);
+      }
+      lastAutoFilledCompraRef.current = candidato;
+      detalles.push({ texto: `Compra asociada: ${candidato.proveedor} — Pedido ${candidato.numeroPedido}` });
+    } else {
+      // 0 o varios candidatos para ESTA búsqueda: si lo que hay ahora en
+      // Proveedor/N° de pedido es justo lo que se autocompletó en una
+      // búsqueda anterior, ya no corresponde a la cotización actual — se
+      // limpia para no dejar datos de otra cotización pegados por error.
+      // Si el vendedor lo tipeó a mano, no se toca.
+      if (
+        lastAutoFilledCompraRef.current &&
+        proveedorRef.current?.value === lastAutoFilledCompraRef.current.proveedor &&
+        numeroPedidoCompraRef.current?.value === lastAutoFilledCompraRef.current.numeroPedido
+      ) {
+        if (proveedorRef.current) proveedorRef.current.value = "";
+        if (numeroPedidoCompraRef.current) numeroPedidoCompraRef.current.value = "";
+      }
+      lastAutoFilledCompraRef.current = null;
+
+      if (res.compraCandidatos.length > 1) {
+        const lista = res.compraCandidatos
+          .slice(0, 3)
+          .map((c) => `${c.proveedor} (${c.numeroPedido})`)
+          .join(", ");
+        detalles.push({
+          texto: `Se encontraron varias posibles compras asociadas — revisa cuál corresponde y complétala a mano: ${lista}`,
+          alerta: true,
+        });
+      }
+    }
+
     setOdoo({
       estado: "ok",
-      mensaje: `${res.cliente} — S/ ${res.montoTotal.toFixed(2)} — ${res.estado}`,
+      resumen: `${res.cliente} — S/ ${res.montoTotal.toFixed(2)} — ${res.estado}`,
+      detalles,
     });
   }
 
@@ -107,10 +200,18 @@ export default function NuevaOrdenForm() {
             </button>
           )}
         </div>
-        {odoo && odoo.estado !== "buscando" && (
-          <p className={`mt-1 text-xs ${odoo.estado === "ok" ? "text-green-700" : "text-amber-700"}`}>
-            {odoo.mensaje}
-          </p>
+        {odoo && odoo.estado === "error" && (
+          <p className="mt-1 text-xs text-amber-700">{odoo.mensaje}</p>
+        )}
+        {odoo && odoo.estado === "ok" && (
+          <div className="mt-1 space-y-0.5">
+            <p className="text-xs text-green-700">{odoo.resumen}</p>
+            {odoo.detalles.map((d, i) => (
+              <p key={i} className={`text-xs ${d.alerta ? "text-amber-700" : "text-green-700"}`}>
+                {d.texto}
+              </p>
+            ))}
+          </div>
         )}
       </div>
 
@@ -158,6 +259,7 @@ export default function NuevaOrdenForm() {
           <input
             id="proyecto"
             name="proyecto"
+            ref={proyectoRef}
             placeholder="Ej. AREQUIPA, ANTAMINA INGENIERÍA"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
           />
@@ -186,6 +288,7 @@ export default function NuevaOrdenForm() {
                 <input
                   id="proveedor"
                   name="proveedor"
+                  ref={proveedorRef}
                   required={requiereCompra}
                   placeholder="Nombre del proveedor"
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
@@ -201,6 +304,7 @@ export default function NuevaOrdenForm() {
                 <input
                   id="numero_pedido_compra"
                   name="numero_pedido_compra"
+                  ref={numeroPedidoCompraRef}
                   placeholder="Ej. P01010"
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
                 />

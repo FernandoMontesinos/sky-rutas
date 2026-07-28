@@ -11,11 +11,16 @@ const ESTADO_LABEL: Record<string, string> = {
   cancel: "Cancelada",
 };
 
+export type CompraCandidato = { proveedor: string; numeroPedido: string };
+
 export type CotizacionOdoo = {
   numero: string;
   cliente: string;
   montoTotal: number;
   estado: string;
+  proyecto: string | null;
+  pdf: { base64: string; nombreArchivo: string } | null;
+  compraCandidatos: CompraCandidato[];
 };
 
 async function odooCall(path: string, params: Record<string, unknown>, cookie?: string) {
@@ -36,7 +41,60 @@ async function odooCall(path: string, params: Record<string, unknown>, cookie?: 
   return { result: json.result, cookie: setCookie ? setCookie.split(";")[0] : cookie };
 }
 
-/** Busca una cotización de Odoo (sale.order) por su número exacto. */
+/** Genera y descarga el PDF de la cotización (mismo reporte que "Vista previa" en Odoo). */
+async function fetchCotizacionPdf(
+  cookie: string | undefined,
+  saleOrderId: number,
+  nombre: string
+): Promise<{ base64: string; nombreArchivo: string } | null> {
+  try {
+    const res = await fetch(`${ODOO_URL}/report/pdf/sale.report_saleorder/${saleOrderId}`, {
+      headers: cookie ? { Cookie: cookie } : {},
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok || !(res.headers.get("content-type") ?? "").includes("application/pdf")) {
+      return null;
+    }
+    const base64 = Buffer.from(await res.arrayBuffer()).toString("base64");
+    return { base64, nombreArchivo: `${nombre}.pdf` };
+  } catch (err) {
+    console.error("No se pudo generar el PDF de la cotización en Odoo:", err);
+    return null;
+  }
+}
+
+/** Busca pedidos de compra (purchase.order) que mencionen esta cotización en su
+ *  referencia interna. Es una heurística de texto libre (ver CONEXION_ODOO_API.md
+ *  / handoff), no una relación garantizada — puede haber 0, 1 o varios candidatos. */
+async function buscarPedidosCompraRelacionados(
+  cookie: string | undefined,
+  numero: string
+): Promise<CompraCandidato[]> {
+  try {
+    const busqueda = await odooCall(
+      "/web/dataset/call_kw",
+      {
+        model: "purchase.order",
+        method: "search_read",
+        args: [[["customer", "ilike", numero]]],
+        kwargs: { fields: ["name", "partner_id"], order: "date_order desc", limit: 5 },
+      },
+      cookie
+    );
+    return (
+      busqueda.result as Array<{ name: string; partner_id: [number, string] | false }>
+    ).map((po) => ({
+      proveedor: po.partner_id ? po.partner_id[1] : "",
+      numeroPedido: po.name,
+    }));
+  } catch (err) {
+    console.error("No se pudo buscar el pedido de compra relacionado en Odoo:", err);
+    return [];
+  }
+}
+
+/** Busca una cotización de Odoo (sale.order) por su número exacto, junto con todo
+ *  lo que se pueda autocompletar a partir de ella (proyecto, PDF, compra asociada). */
 export async function buscarCotizacion(numero: string): Promise<CotizacionOdoo | null> {
   const numeroLimpio = numero.trim();
   if (!numeroLimpio) return null;
@@ -58,7 +116,7 @@ export async function buscarCotizacion(numero: string): Promise<CotizacionOdoo |
       method: "search_read",
       args: [[["name", "=ilike", numeroLimpio]]],
       kwargs: {
-        fields: ["name", "state", "partner_id", "amount_total"],
+        fields: ["id", "name", "state", "partner_id", "amount_total", "project_id"],
         limit: 1,
       },
     },
@@ -67,18 +125,30 @@ export async function buscarCotizacion(numero: string): Promise<CotizacionOdoo |
 
   const cotizacion = (
     busqueda.result as Array<{
+      id: number;
       name: string;
       partner_id: [number, string] | false;
       amount_total: number;
       state: string;
+      project_id: [number, string] | false;
     }>
   )[0];
   if (!cotizacion) return null;
+
+  // El PDF y la búsqueda del pedido de compra son "mejor esfuerzo": si alguno
+  // falla, no debe tumbar el resto de datos que ya se obtuvieron arriba.
+  const [pdfResult, compraResult] = await Promise.allSettled([
+    fetchCotizacionPdf(auth.cookie, cotizacion.id, cotizacion.name),
+    buscarPedidosCompraRelacionados(auth.cookie, cotizacion.name),
+  ]);
 
   return {
     numero: cotizacion.name,
     cliente: cotizacion.partner_id ? cotizacion.partner_id[1] : "",
     montoTotal: cotizacion.amount_total,
     estado: ESTADO_LABEL[cotizacion.state] ?? cotizacion.state,
+    proyecto: cotizacion.project_id ? cotizacion.project_id[1] : null,
+    pdf: pdfResult.status === "fulfilled" ? pdfResult.value : null,
+    compraCandidatos: compraResult.status === "fulfilled" ? compraResult.value : [],
   };
 }
