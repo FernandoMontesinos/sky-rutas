@@ -17,7 +17,7 @@ type LocRow = {
 type OrdRow = { numero_pedido: string; tipo: OrderType; assigned_to: string | null };
 
 export default async function MapaPage() {
-  await requireRole(["admin", "almacen"]);
+  await requireRole(["admin", "almacen", "vendedor"]);
   const supabase = await createClient();
 
   const [{ data: locs }, { data: ords }] = await Promise.all([
