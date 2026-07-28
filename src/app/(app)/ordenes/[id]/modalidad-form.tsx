@@ -3,17 +3,19 @@
 import { useState, useTransition } from "react";
 import { updateModalidad } from "../actions";
 import { SavedIndicator } from "@/components/saved-indicator";
-import { MODALIDAD_LABEL, type Modalidad } from "@/lib/types";
+import { modalidadLabel, type Modalidad, type OrderType } from "@/lib/types";
 
 /** Modalidad de entrega con autoguardado (sin botón: se guarda al elegir/salir del campo). */
 export function ModalidadForm({
   orderId,
   modalidad,
   courierTracking,
+  tipo,
 }: {
   orderId: string;
   modalidad: Modalidad;
   courierTracking: string | null;
+  tipo: OrderType;
 }) {
   const [valor, setValor] = useState<Modalidad>(modalidad);
   const [tracking, setTracking] = useState(courierTracking ?? "");
@@ -49,7 +51,7 @@ export function ModalidadForm({
       >
         {(["reparto", "oficina", "courier"] as Modalidad[]).map((m) => (
           <option key={m} value={m}>
-            {MODALIDAD_LABEL[m]}
+            {modalidadLabel(m, tipo)}
           </option>
         ))}
       </select>

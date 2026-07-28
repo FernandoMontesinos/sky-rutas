@@ -3,7 +3,7 @@
 import { useActionState, useState, startTransition } from "react";
 import { createOrder, type FormResult } from "../actions";
 import { MultiImagePicker, type PickedImage } from "@/components/multi-image-picker";
-import { MODALIDAD_LABEL, type Modalidad, type OrderType } from "@/lib/types";
+import { modalidadLabel, type Modalidad, type OrderType } from "@/lib/types";
 
 const TIPO_LABEL: Record<OrderType, string> = {
   entrega: "Cliente",
@@ -35,9 +35,14 @@ export default function NuevaOrdenForm() {
       return;
     }
     const fd = new FormData(e.currentTarget);
+    if (requiereCompra && !String(fd.get("proveedor") ?? "").trim()) {
+      setLocalError("Ingresa el nombre del proveedor.");
+      return;
+    }
     images.forEach((img) => fd.append("imagenes", img.file));
     fd.set("tipo", tipo);
     fd.set("modalidad", modalidad);
+    if (requiereCompra) fd.set("requiere_compra", "1");
     startTransition(() => action(fd));
   }
 
@@ -137,6 +142,7 @@ export default function NuevaOrdenForm() {
                 <input
                   id="proveedor"
                   name="proveedor"
+                  required={requiereCompra}
                   placeholder="Nombre del proveedor"
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
                 />
@@ -146,7 +152,7 @@ export default function NuevaOrdenForm() {
                   htmlFor="numero_pedido_compra"
                   className="mb-1 block text-sm font-medium text-gray-700"
                 >
-                  N° de pedido de compra
+                  N° de pedido de compra (opcional)
                 </label>
                 <input
                   id="numero_pedido_compra"
@@ -173,7 +179,7 @@ export default function NuevaOrdenForm() {
         >
           {(["reparto", "oficina", "courier"] as Modalidad[]).map((m) => (
             <option key={m} value={m}>
-              {MODALIDAD_LABEL[m]}
+              {modalidadLabel(m, esRecojo ? "recojo" : "entrega")}
             </option>
           ))}
         </select>
