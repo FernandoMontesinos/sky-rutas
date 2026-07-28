@@ -50,6 +50,7 @@ export async function createOrder(
   // Proveedor/pedido de compra: solo aplica a una entrega (venta) que además
   // requirió comprarle a un proveedor. En un recojo, ya se usa cliente/numero
   // como proveedor/pedido (ver etiquetas dinámicas en el formulario).
+  const requiereCompra = formData.get("requiere_compra") === "1";
   const proveedor = String(formData.get("proveedor") ?? "").trim() || null;
   const numeroPedidoCompra = String(formData.get("numero_pedido_compra") ?? "").trim() || null;
   const nota = String(formData.get("nota") ?? "").trim() || null;
@@ -62,8 +63,24 @@ export async function createOrder(
     return { error: "Modalidad de entrega inválida." };
   if (imagenes.length === 0)
     return { error: "Agrega al menos una imagen de la orden (pégala o toma una foto)." };
+  // Defensa en el servidor: el checkbox ya lo exige en el navegador, pero
+  // no hay que confiar solo en la validación del cliente.
+  if (tipo === "entrega" && requiereCompra && !proveedor)
+    return { error: "Ingresa el nombre del proveedor." };
 
   const supabase = await createClient();
+
+  // Bloquear duplicados: chequeo previo (buen mensaje) + el índice único
+  // en la base como red de seguridad ante dos creaciones simultáneas.
+  const { data: existente } = await supabase
+    .from("orders")
+    .select("id")
+    .ilike("numero_pedido", numero)
+    .maybeSingle();
+  if (existente) {
+    return { error: `Ya existe un pedido con el número "${numero}". Revisa que no sea un duplicado.` };
+  }
+
   const { urls, error: upErr } = await uploadMany(supabase, "ordenes", userId, imagenes);
   if (upErr) return { error: "No se pudo subir la imagen: " + upErr };
 
@@ -87,7 +104,12 @@ export async function createOrder(
     })
     .select("id")
     .single();
-  if (insErr) return { error: insErr.message };
+  if (insErr) {
+    if (insErr.code === "23505") {
+      return { error: `Ya existe un pedido con el número "${numero}". Revisa que no sea un duplicado.` };
+    }
+    return { error: insErr.message };
+  }
 
   const almacenIds = await userIdsByRole("almacen");
   await notify(almacenIds, {
@@ -280,4 +302,44 @@ export async function deleteOrder(formData: FormData): Promise<void> {
 
   revalidatePath("/ordenes");
   redirect("/ordenes");
+}
+
+/**
+ * Quita un PDF/imagen adjunto a la orden (no la orden completa — eso
+ * sigue siendo solo para admin, ver `deleteOrder`). RLS deja hacer esto
+ * a admin/almacén, al repartidor asignado, o a quien creó la orden.
+ */
+export async function eliminarAdjunto(formData: FormData): Promise<void> {
+  await requireRole(["admin", "vendedor", "almacen", "repartidor"]);
+
+  const orderId = String(formData.get("order_id") ?? "");
+  const url = String(formData.get("url") ?? "");
+  if (!orderId || !url) return;
+
+  const supabase = await createClient();
+  const { data: order } = await supabase
+    .from("orders")
+    .select("imagen_url, imagenes_urls")
+    .eq("id", orderId)
+    .single();
+  if (!order) return;
+
+  const restantes = (order.imagenes_urls ?? []).filter((u: string) => u !== url);
+  await supabase
+    .from("orders")
+    .update({ imagenes_urls: restantes, imagen_url: restantes[0] ?? null })
+    .eq("id", orderId);
+
+  // Borrar el archivo real del storage es "mejor esfuerzo": si falla (ya
+  // no existe, o la URL no calza con el patrón esperado) no bloqueamos
+  // la operación — lo importante es que ya no aparezca en la orden.
+  const marker = "/object/public/ordenes/";
+  const idx = url.indexOf(marker);
+  if (idx !== -1) {
+    const path = url.slice(idx + marker.length).split("?")[0];
+    await supabase.storage.from("ordenes").remove([path]);
+  }
+
+  revalidatePath(`/ordenes/${orderId}`);
+  revalidatePath("/ordenes");
 }

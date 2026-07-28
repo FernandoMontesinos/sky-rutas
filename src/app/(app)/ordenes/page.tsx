@@ -1,5 +1,16 @@
 import Link from "next/link";
-import { Plus, StickyNote, Truck, Users, LayoutGrid, Table2, Rows3, AlignLeft, FileText } from "lucide-react";
+import {
+  Plus,
+  StickyNote,
+  Truck,
+  Users,
+  LayoutGrid,
+  Table2,
+  Rows3,
+  AlignLeft,
+  FileText,
+  ChevronDown,
+} from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
@@ -63,9 +74,9 @@ function OrderCardCompact({ o }: { o: OrderWithNames }) {
     >
       <span
         className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${tipoStyle}`}
-        title={o.tipo === "entrega" ? "Entrega" : "Recojo"}
+        title={o.tipo === "entrega" ? "Cotización (cliente)" : "Pedido de compra (proveedor)"}
       >
-        {o.tipo === "entrega" ? "E" : "R"}
+        {o.tipo === "entrega" ? "S" : "P"}
       </span>
 
       <div className="min-w-0 flex-1">
@@ -179,6 +190,13 @@ function Column({
   /** En móvil ocupa todo el ancho (columnas apiladas) en vez de scroll lateral. */
   fullWidthMobile?: boolean;
 }) {
+  // Cotizaciones (Cliente) arriba, pedidos de compra (Proveedor) abajo,
+  // separados con un rótulo — antes se mezclaban sin distinción dentro
+  // de la misma columna.
+  const cotizaciones = orders.filter((o) => o.tipo === "entrega");
+  const pedidos = orders.filter((o) => o.tipo === "recojo");
+  const Card = detallado ? OrderCardDetallado : OrderCardCompact;
+
   return (
     <div
       className={`flex shrink-0 flex-col rounded-2xl bg-gray-100 p-2 sm:w-auto sm:flex-1 ${
@@ -197,10 +215,22 @@ function Column({
       <div className="flex flex-col gap-2">
         {orders.length === 0 ? (
           <p className="px-1 py-4 text-center text-xs text-gray-400">—</p>
-        ) : detallado ? (
-          orders.map((o) => <OrderCardDetallado key={o.id} o={o} />)
         ) : (
-          orders.map((o) => <OrderCardCompact key={o.id} o={o} />)
+          <>
+            {cotizaciones.map((o) => (
+              <Card key={o.id} o={o} />
+            ))}
+            {cotizaciones.length > 0 && pedidos.length > 0 && (
+              <div className="my-1 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                <span className="h-px flex-1 bg-gray-300" />
+                Pedidos de compra
+                <span className="h-px flex-1 bg-gray-300" />
+              </div>
+            )}
+            {pedidos.map((o) => (
+              <Card key={o.id} o={o} />
+            ))}
+          </>
         )}
       </div>
     </div>
@@ -339,23 +369,11 @@ export default async function OrdenesPage({
   const byEstado = (e: OrderStatus) => activasList.filter((o) => o.estado === e);
   const mostrarTodasLasColumnas = !isRepartidor || verTodas;
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">
-          {isRepartidor ? (verTodas ? "Toda la ruta" : "Mi ruta") : "Tablero de órdenes"}
-        </h1>
-        {(profile.role === "admin" || profile.role === "vendedor") && (
-          <Link
-            href="/ordenes/nueva"
-            className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark"
-          >
-            <Plus className="h-4 w-4" strokeWidth={2.5} />
-            Nueva
-          </Link>
-        )}
-      </div>
-
+  // En celular estos controles ocupaban 3 filas antes de llegar a ver una
+  // sola orden — se agrupan en un <details> colapsable (sin JS) solo en
+  // esa pantalla; de sm en adelante se ven siempre, como antes.
+  const controles = (
+    <>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           {isRepartidor && (
@@ -443,6 +461,37 @@ export default async function OrdenesPage({
           ))}
         </div>
       </div>
+    </>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">
+          {isRepartidor ? (verTodas ? "Toda la ruta" : "Mi ruta") : "Tablero de órdenes"}
+        </h1>
+        {(profile.role === "admin" || profile.role === "vendedor") && (
+          <Link
+            href="/ordenes/nueva"
+            className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark"
+          >
+            <Plus className="h-4 w-4" strokeWidth={2.5} />
+            Nueva
+          </Link>
+        )}
+      </div>
+
+      <details className="group rounded-xl border border-gray-200 bg-white px-3 py-2 sm:hidden">
+        <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-gray-700">
+          Filtros
+          <ChevronDown
+            className="h-4 w-4 text-gray-400 transition group-open:rotate-180"
+            strokeWidth={2.25}
+          />
+        </summary>
+        <div className="mt-3 space-y-3">{controles}</div>
+      </details>
+      <div className="hidden space-y-3 sm:block">{controles}</div>
 
       {formato === "tabla" ? (
         <TablaOrdenes orders={[...activasList, ...completadasList]} />

@@ -71,3 +71,17 @@ export const MODALIDAD_SHORT: Record<Modalidad, string> = {
   oficina: "Oficina",
   courier: "Courier",
 };
+
+/**
+ * Etiqueta completa de la modalidad "oficina" según el tipo de orden:
+ * a un Cliente se le entrega en mano cuando "recoge" su pedido; a un
+ * Proveedor almacén le "recibe" la mercadería — son acciones distintas
+ * aunque la modalidad guardada en la base sea la misma ("oficina").
+ * El resto de las modalidades no cambian según el tipo.
+ */
+export function modalidadLabel(modalidad: Modalidad, tipo: OrderType): string {
+  if (modalidad === "oficina") {
+    return tipo === "recojo" ? "Recepción en oficina" : "Recojo en oficina";
+  }
+  return MODALIDAD_LABEL[modalidad];
+}

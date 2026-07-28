@@ -10,7 +10,7 @@ import { ModalidadForm } from "./modalidad-form";
 import { AsignarForm } from "./asignar-form";
 import { AlmacenOverrideCompletar } from "./almacen-override";
 import CompletarForm from "./completar";
-import { MODALIDAD_LABEL, type OrderWithNames, type Profile } from "@/lib/types";
+import { modalidadLabel, type OrderWithNames, type Profile } from "@/lib/types";
 
 const SELECT =
   "*, creador:profiles!orders_created_by_fkey(full_name), repartidor:profiles!orders_assigned_to_fkey(full_name)";
@@ -54,6 +54,10 @@ export default async function OrdenDetallePage({
   const isMine = order.assigned_to === userId;
   const isRepartidor = profile.role === "repartidor";
   const isAlmacen = profile.role === "almacen";
+  // Mismos roles que ahora permite la política RLS de UPDATE sobre orders:
+  // admin/almacén siempre, el repartidor asignado, o quien creó la orden.
+  const puedeEditarAdjuntos =
+    canAssign || (isRepartidor && isMine) || order.created_by === userId;
   // Almacén normalmente termina su trabajo en "asignar" cuando hay un
   // repartidor de por medio (modalidad reparto) — es el repartidor quien
   // confirma desde su celular. Pero conserva la opción de completarla él
@@ -130,7 +134,11 @@ export default async function OrdenDetallePage({
           <h2 className="mb-1 text-sm font-medium text-gray-500">
             Orden {imagenesOrden.length > 1 && `(${imagenesOrden.length} imágenes)`}
           </h2>
-          <ImageGallery urls={imagenesOrden} alt="Imagen de la orden" />
+          <ImageGallery
+            urls={imagenesOrden}
+            alt="Imagen de la orden"
+            orderId={puedeEditarAdjuntos ? order.id : undefined}
+          />
         </div>
       )}
 
@@ -164,7 +172,9 @@ export default async function OrdenDetallePage({
         </div>
         <div className="min-w-0">
           <dt className="text-gray-400">Modalidad</dt>
-          <dd className="break-words font-medium text-gray-800">{MODALIDAD_LABEL[order.modalidad]}</dd>
+          <dd className="break-words font-medium text-gray-800">
+            {modalidadLabel(order.modalidad, order.tipo)}
+          </dd>
         </div>
         {order.courier_tracking && (
           <div className="min-w-0">
@@ -198,6 +208,7 @@ export default async function OrdenDetallePage({
           orderId={order.id}
           modalidad={order.modalidad}
           courierTracking={order.courier_tracking}
+          tipo={order.tipo}
         />
       )}
 
