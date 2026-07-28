@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState, useState, startTransition } from "react";
+import { useActionState, useRef, useState, startTransition } from "react";
 import { createOrder, type FormResult } from "../actions";
+import { buscarCotizacionOdoo } from "./odoo-actions";
 import { MultiImagePicker, type PickedImage } from "@/components/multi-image-picker";
 import { modalidadLabel, type Modalidad, type OrderType } from "@/lib/types";
 
@@ -17,6 +18,30 @@ export default function NuevaOrdenForm() {
   const [modalidad, setModalidad] = useState<Modalidad>("reparto");
   const [requiereCompra, setRequiereCompra] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const numeroRef = useRef<HTMLInputElement>(null);
+  const clienteRef = useRef<HTMLInputElement>(null);
+  const [odoo, setOdoo] = useState<
+    { estado: "buscando" } | { estado: "ok"; mensaje: string } | { estado: "error"; mensaje: string } | null
+  >(null);
+
+  async function buscarEnOdoo() {
+    const numero = numeroRef.current?.value.trim() ?? "";
+    if (!numero) {
+      setOdoo({ estado: "error", mensaje: "Escribe primero el número de cotización." });
+      return;
+    }
+    setOdoo({ estado: "buscando" });
+    const res = await buscarCotizacionOdoo(numero);
+    if (!res.ok) {
+      setOdoo({ estado: "error", mensaje: res.error });
+      return;
+    }
+    if (clienteRef.current) clienteRef.current.value = res.cliente;
+    setOdoo({
+      estado: "ok",
+      mensaje: `${res.cliente} — S/ ${res.montoTotal.toFixed(2)} — ${res.estado}`,
+    });
+  }
 
   const esRecojo = tipo === "recojo";
   const clienteLabel = esRecojo ? "Proveedor" : "Cliente";
@@ -62,13 +87,31 @@ export default function NuevaOrdenForm() {
         <label htmlFor="numero_pedido" className="mb-1 block text-sm font-medium text-gray-700">
           {numeroLabel}
         </label>
-        <input
-          id="numero_pedido"
-          name="numero_pedido"
-          required
-          placeholder={numeroPlaceholder}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
-        />
+        <div className="flex gap-2">
+          <input
+            id="numero_pedido"
+            name="numero_pedido"
+            ref={numeroRef}
+            required
+            placeholder={numeroPlaceholder}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+          />
+          {tipo === "entrega" && (
+            <button
+              type="button"
+              onClick={buscarEnOdoo}
+              disabled={odoo?.estado === "buscando"}
+              className="shrink-0 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:border-brand hover:text-brand disabled:opacity-60"
+            >
+              {odoo?.estado === "buscando" ? "Buscando…" : "Buscar en Odoo"}
+            </button>
+          )}
+        </div>
+        {odoo && odoo.estado !== "buscando" && (
+          <p className={`mt-1 text-xs ${odoo.estado === "ok" ? "text-green-700" : "text-amber-700"}`}>
+            {odoo.mensaje}
+          </p>
+        )}
       </div>
 
       {/* Cliente / Proveedor (etiqueta según el tipo elegido) */}
@@ -79,6 +122,7 @@ export default function NuevaOrdenForm() {
         <input
           id="cliente"
           name="cliente"
+          ref={clienteRef}
           placeholder={esRecojo ? "Nombre del proveedor" : "Nombre del cliente"}
           className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
         />
