@@ -186,6 +186,28 @@ export default function NuevaOrdenForm() {
         allowPaste
       />
 
+      {/* Tipo — va primero porque decide las etiquetas/placeholders de todo
+          lo demás (N° de pedido, Cliente/Proveedor, Proyecto, etc.). */}
+      <div>
+        <span className="mb-1 block text-sm font-medium text-gray-700">Tipo</span>
+        <div className="grid grid-cols-2 gap-3">
+          {(["entrega", "recojo"] as OrderType[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTipo(t)}
+              className={`rounded-xl border-2 py-3 font-bold uppercase transition ${
+                tipo === t
+                  ? "border-brand bg-brand text-white"
+                  : "border-gray-300 bg-white text-gray-700 hover:border-brand"
+              }`}
+            >
+              {TIPO_LABEL[t]}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Número de pedido / cotización (etiqueta según el tipo elegido) */}
       <div>
         <label htmlFor="numero_pedido" className="mb-1 block text-sm font-medium text-gray-700">
@@ -254,27 +276,6 @@ export default function NuevaOrdenForm() {
           placeholder={esRecojo ? "Nombre del proveedor" : "Nombre del cliente"}
           className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
         />
-      </div>
-
-      {/* Tipo */}
-      <div>
-        <span className="mb-1 block text-sm font-medium text-gray-700">Tipo</span>
-        <div className="grid grid-cols-2 gap-3">
-          {(["entrega", "recojo"] as OrderType[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTipo(t)}
-              className={`rounded-xl border-2 py-3 font-bold uppercase transition ${
-                tipo === t
-                  ? "border-brand bg-brand text-white"
-                  : "border-gray-300 bg-white text-gray-700 hover:border-brand"
-              }`}
-            >
-              {TIPO_LABEL[t]}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Proyecto (opcional, solo cuando se atiende a un Cliente) */}

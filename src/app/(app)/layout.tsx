@@ -14,7 +14,7 @@ const NAV: NavItem[] = [
   { href: "/", label: "Inicio", icon: "home", roles: ["admin", "vendedor", "almacen", "repartidor"] },
   { href: "/ordenes/nueva", label: "Nueva orden", short: "Nueva", icon: "package-plus", roles: ["admin", "vendedor"] },
   { href: "/ordenes", label: "Órdenes", icon: "clipboard-list", roles: ["admin", "vendedor", "almacen", "repartidor"] },
-  { href: "/mapa", label: "Mapa", icon: "map", roles: ["admin", "almacen"] },
+  { href: "/mapa", label: "Mapa", icon: "map", roles: ["admin", "almacen", "vendedor"] },
   { href: "/reportes", label: "Reportes", icon: "bar-chart", roles: ["admin", "almacen"] },
   { href: "/admin/usuarios", label: "Usuarios", icon: "users", roles: ["admin"] },
 ];
