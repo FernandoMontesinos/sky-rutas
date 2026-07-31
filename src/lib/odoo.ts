@@ -1,7 +1,10 @@
-const ODOO_URL = process.env.ODOO_URL;
-const ODOO_DB = process.env.ODOO_DB;
-const ODOO_USER = process.env.ODOO_USER;
-const ODOO_PASS = process.env.ODOO_PASS;
+// .trim() por las dudas de un espacio/salto de línea de más al copiar y
+// pegar el valor en el panel de variables de entorno de Vercel — es un
+// error común y silencioso (Odoo simplemente rechaza el login).
+const ODOO_URL = process.env.ODOO_URL?.trim().replace(/\/+$/, "");
+const ODOO_DB = process.env.ODOO_DB?.trim();
+const ODOO_USER = process.env.ODOO_USER?.trim();
+const ODOO_PASS = process.env.ODOO_PASS?.trim();
 
 const ESTADO_LABEL: Record<string, string> = {
   draft: "Borrador",
