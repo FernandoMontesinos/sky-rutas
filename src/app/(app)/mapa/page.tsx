@@ -27,7 +27,9 @@ export default async function MapaPage() {
     supabase
       .from("orders")
       .select("numero_pedido, tipo, assigned_to")
-      .eq("estado", "asignado"),
+      // "en_transito" también: el material ya recogido va literalmente en el
+      // vehículo del repartidor, así que cuenta como carga suya en el mapa.
+      .in("estado", ["asignado", "en_transito"]),
   ]);
 
   const locations = (locs ?? []) as unknown as LocRow[];

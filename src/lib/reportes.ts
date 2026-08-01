@@ -45,6 +45,7 @@ export type ReporteRow = {
   nota: string | null;
   created_at: string;
   assigned_at: string | null;
+  en_transito_at: string | null;
   completed_at: string | null;
   imagen_url: string | null;
   imagenes_urls: string[] | null;
@@ -54,14 +55,14 @@ export type ReporteRow = {
 
 export const SELECT_REPORTE =
   "id, numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, tipo, estado, modalidad, " +
-  "courier_tracking, entrega_parcial, parent_order_id, nota, created_at, assigned_at, completed_at, " +
+  "courier_tracking, entrega_parcial, parent_order_id, nota, created_at, assigned_at, en_transito_at, completed_at, " +
   "imagen_url, imagenes_urls, " +
   "creador:profiles!orders_created_by_fkey(full_name), repartidor:profiles!orders_assigned_to_fkey(full_name)";
 
 /** Tope de filas por consulta: el rango de fechas ya acota, esto es solo red de seguridad. */
 export const LIMITE_FILAS = 5000;
 
-const ESTADOS: OrderStatus[] = ["pendiente", "asignado", "completado"];
+const ESTADOS: OrderStatus[] = ["pendiente", "asignado", "en_transito", "completado"];
 const TIPOS: OrderType[] = ["entrega", "recojo"];
 
 /** Fecha en formato YYYY-MM-DD según el reloj de Lima. */
@@ -163,6 +164,7 @@ export function resumen(rows: ReporteRow[]) {
     total: rows.length,
     pendientes: rows.filter((r) => r.estado === "pendiente").length,
     asignadas: rows.filter((r) => r.estado === "asignado").length,
+    enTransito: rows.filter((r) => r.estado === "en_transito").length,
     completadas: rows.filter((r) => r.estado === "completado").length,
     parciales: rows.filter((r) => r.entrega_parcial).length,
   };

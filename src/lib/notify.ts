@@ -16,6 +16,7 @@ if (vapidReady) {
 export type NotifTipo =
   | "orden_pendiente"
   | "orden_asignada"
+  | "orden_en_transito"
   | "orden_completada"
   | "orden_parcial";
 

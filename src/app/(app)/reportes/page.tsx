@@ -42,6 +42,7 @@ export default async function ReportesPage({
     { label: "Total", value: totales.total, tone: "bg-gray-100 text-gray-800" },
     { label: "Pendientes", value: totales.pendientes, tone: "bg-gray-100 text-gray-700" },
     { label: "Asignadas", value: totales.asignadas, tone: "bg-amber-50 text-amber-800" },
+    { label: "En Tránsito", value: totales.enTransito, tone: "bg-sky-50 text-sky-800" },
     { label: "Completadas", value: totales.completadas, tone: "bg-green-50 text-green-800" },
     { label: "Parciales", value: totales.parciales, tone: "bg-orange-50 text-orange-800" },
   ];
@@ -98,6 +99,7 @@ export default async function ReportesPage({
               <option value="">Todos</option>
               <option value="pendiente">Pendiente</option>
               <option value="asignado">Asignado</option>
+              <option value="en_transito">En Tránsito</option>
               <option value="completado">Completado</option>
             </select>
           </div>
@@ -202,7 +204,7 @@ export default async function ReportesPage({
         </div>
       </form>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {tarjetas.map((c) => (
           <div key={c.label} className={`rounded-2xl p-4 ${c.tone}`}>
             <div className="text-2xl font-black tabular-nums">{c.value}</div>

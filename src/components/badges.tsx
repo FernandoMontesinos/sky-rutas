@@ -19,6 +19,7 @@ export function StatusBadge({
   const styles: Record<OrderStatus, string> = {
     pendiente: "bg-gray-200 text-gray-700",
     asignado: "bg-amber-100 text-amber-800",
+    en_transito: "bg-sky-100 text-sky-800",
     completado: "bg-green-100 text-green-800",
   };
   if (estado === "completado" && parcial) {

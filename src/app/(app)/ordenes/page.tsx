@@ -342,11 +342,11 @@ export default async function OrdenesPage({
     return qs ? `/ordenes?${qs}` : "/ordenes";
   }
 
-  // Activas (pendiente + asignado) y completadas (según el rango elegido).
+  // Activas (pendiente + asignado + en tránsito) y completadas (según el rango elegido).
   let activas = supabase
     .from("orders")
     .select(SELECT)
-    .in("estado", ["pendiente", "asignado"])
+    .in("estado", ["pendiente", "asignado", "en_transito"])
     .order("created_at", { ascending: false });
 
   let completadas = supabase
@@ -500,6 +500,12 @@ export default async function OrdenesPage({
           <Column title="Pendientes" color="bg-gray-400" orders={byEstado("pendiente")} detallado={detallado} />
           <Column title="Asignadas" color="bg-amber-500" orders={byEstado("asignado")} detallado={detallado} />
           <Column
+            title="En Tránsito"
+            color="bg-sky-500"
+            orders={byEstado("en_transito")}
+            detallado={detallado}
+          />
+          <Column
             title={`Completadas · ${RANGO_LABEL[rango]}`}
             color="bg-green-500"
             orders={completadasList}
@@ -513,6 +519,16 @@ export default async function OrdenesPage({
             title="Por hacer"
             color="bg-amber-500"
             orders={byEstado("asignado")}
+            detallado={detallado}
+            fullWidthMobile
+          />
+          {/* Ya recogidas: salen de "Por hacer" al confirmar el recojo, pero
+              siguen visibles porque si el material va directo al cliente es
+              el propio repartidor quien la cierra al entregarla. */}
+          <Column
+            title="Recogidas (por cerrar)"
+            color="bg-sky-500"
+            orders={byEstado("en_transito")}
             detallado={detallado}
             fullWidthMobile
           />

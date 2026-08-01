@@ -9,7 +9,7 @@ import { deleteOrder } from "../actions";
 import { ModalidadForm } from "./modalidad-form";
 import { AsignarForm } from "./asignar-form";
 import { AlmacenOverrideCompletar } from "./almacen-override";
-import CompletarForm from "./completar";
+import CompletarForm, { RecojoForm } from "./completar";
 import { modalidadLabel, type OrderWithNames, type Profile } from "@/lib/types";
 
 const SELECT =
@@ -67,6 +67,17 @@ export default async function OrdenDetallePage({
   const canComplete =
     order.estado !== "completado" &&
     (profile.role === "admin" || isAlmacen || (isRepartidor && isMine));
+
+  // Un Pedido (Proveedor) que todavía tiene que ir a recoger el repartidor:
+  // él solo sube la guía y confirma el recojo, sin decir si llegó completo
+  // (recibe bultos sellados, no cuenta ítems). Almacén/admin sí pueden
+  // cerrarla directo desde "asignado" — es el caso de los pedidos que no
+  // pasan por un repartidor (Recepción en oficina / Courier).
+  const esRecojoPorConfirmar =
+    order.tipo === "recojo" && order.estado === "asignado" && isRepartidor && isMine;
+  // Ya se recogió y falta contar la mercadería: la cierra quien la cuente
+  // (almacén al recibirla, o el repartidor si fue directo al cliente).
+  const estaEnTransito = order.estado === "en_transito";
 
   // Backorder: si esta orden viene de una parcial, o si generó una al
   // quedar parcial, se muestra el enlace cruzado para no perder el hilo.
@@ -166,6 +177,12 @@ export default async function OrdenDetallePage({
           <dt className="text-gray-400">Creada</dt>
           <dd className="break-words font-medium text-gray-800">{fmt(order.created_at)}</dd>
         </div>
+        {order.en_transito_at && (
+          <div className="min-w-0">
+            <dt className="text-gray-400">Recogida</dt>
+            <dd className="break-words font-medium text-gray-800">{fmt(order.en_transito_at)}</dd>
+          </div>
+        )}
         <div className="min-w-0">
           <dt className="text-gray-400">Completada</dt>
           <dd className="break-words font-medium text-gray-800">{fmt(order.completed_at) ?? "—"}</dd>
@@ -221,17 +238,21 @@ export default async function OrdenDetallePage({
         />
       )}
 
-      {/* Completar:
+      {/* Paso 1 de un Pedido: el repartidor confirma el recojo (sin contar). */}
+      {esRecojoPorConfirmar && <RecojoForm orderId={order.id} />}
+
+      {/* Completar / verificar: lo hace quien contó la mercadería.
           - repartidor: solo si la orden es suya (asignada)
-          - almacén en reparto: oculto detrás de un paso extra (ver arriba)
+          - almacén en reparto: oculto detrás de un paso extra (ver arriba),
+            salvo que ya esté En Tránsito — ahí verificar SÍ es su trabajo
           - almacén en oficina/courier y admin: directo */}
-      {canComplete && (isRepartidor ? order.assigned_to : true) && (
-        almacenReparto ? (
+      {!esRecojoPorConfirmar && canComplete && (isRepartidor ? order.assigned_to : true) && (
+        almacenReparto && !estaEnTransito ? (
           <AlmacenOverrideCompletar repartidorNombre={order.repartidor?.full_name ?? "el repartidor asignado"}>
             <CompletarForm orderId={order.id} tipo={order.tipo} />
           </AlmacenOverrideCompletar>
         ) : (
-          <CompletarForm orderId={order.id} tipo={order.tipo} />
+          <CompletarForm orderId={order.id} tipo={order.tipo} verificando={estaEnTransito} />
         )
       )}
 

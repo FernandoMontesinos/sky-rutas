@@ -1,17 +1,82 @@
 "use client";
 
 import { useActionState, useState, startTransition } from "react";
-import { CheckCircle2, AlertTriangle, Camera } from "lucide-react";
-import { completeOrder, type FormResult } from "../actions";
+import { CheckCircle2, AlertTriangle, Camera, Truck } from "lucide-react";
+import { completeOrder, marcarEnTransito, type FormResult } from "../actions";
 import { MultiImagePicker, type PickedImage } from "@/components/multi-image-picker";
 import { TYPE_LABEL, type OrderType } from "@/lib/types";
 
+/**
+ * Paso 1 de un Pedido (Proveedor): el repartidor sube la guía y confirma que
+ * recogió el material. A propósito NO se le pregunta completa/parcial — él
+ * recibe bultos sellados y no cuenta los ítems. La orden queda "En Tránsito"
+ * y la cierra quien cuente la mercadería (ver CompletarForm).
+ */
+export function RecojoForm({ orderId }: { orderId: string }) {
+  const [state, action, pending] = useActionState<FormResult, FormData>(marcarEnTransito, {});
+  const [images, setImages] = useState<PickedImage[]>([]);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  function confirmar() {
+    if (images.length === 0) {
+      setLocalError("Primero toma la foto de la guía.");
+      return;
+    }
+    setLocalError(null);
+    const fd = new FormData();
+    fd.set("order_id", orderId);
+    images.forEach((img) => fd.append("guias", img.file));
+    startTransition(() => action(fd));
+  }
+
+  const errorMsg = localError ?? state.error;
+
+  return (
+    <div className="space-y-4 rounded-2xl border border-sky-300 bg-sky-50 p-4">
+      <h2 className="flex items-center gap-2 font-semibold text-gray-900">
+        <Camera className="h-5 w-5 text-sky-700" />
+        Foto(s) de la guía del proveedor
+      </h2>
+
+      <MultiImagePicker label="" images={images} onChange={setImages} />
+
+      {errorMsg && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-dark">{errorMsg}</p>
+      )}
+
+      <button
+        type="button"
+        onClick={confirmar}
+        disabled={pending || images.length === 0}
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-sky-700 py-3 font-semibold text-white transition hover:bg-sky-800 disabled:opacity-50"
+      >
+        <Truck className="h-5 w-5" />
+        {pending ? "Confirmando..." : "Confirmar recojo"}
+      </button>
+      <p className="text-center text-xs text-gray-600">
+        Solo confirmas que recogiste el material. No hace falta que cuentes los ítems —
+        la orden queda <strong>En Tránsito</strong> hasta que se verifique la cantidad.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Cierre de la orden: lo hace quien CONTÓ la mercadería. En una entrega a
+ * cliente es el repartidor (el cliente cuenta y firma delante suyo); en un
+ * pedido que llega al depósito es almacén; en un pedido que va directo del
+ * proveedor al cliente vuelve a ser el repartidor.
+ */
 export default function CompletarForm({
   orderId,
   tipo,
+  verificando = false,
 }: {
   orderId: string;
   tipo: OrderType;
+  /** La orden ya venía "En Tránsito": la guía se subió al recoger, así que
+   *  acá la foto es opcional y el texto habla de verificar, no de entregar. */
+  verificando?: boolean;
 }) {
   const [state, action, pending] = useActionState<FormResult, FormData>(
     completeOrder,
@@ -23,7 +88,7 @@ export default function CompletarForm({
   const [localError, setLocalError] = useState<string | null>(null);
 
   function confirmar() {
-    if (images.length === 0) {
+    if (!verificando && images.length === 0) {
       setLocalError("Primero toma la foto de la guía.");
       return;
     }
@@ -49,14 +114,16 @@ export default function CompletarForm({
     <div className="space-y-4 rounded-2xl border border-brand/30 bg-brand/5 p-4">
       <h2 className="flex items-center gap-2 font-semibold text-gray-900">
         <Camera className="h-5 w-5 text-brand" />
-        Foto(s) de la guía
+        {verificando ? "Foto(s) adicionales (opcional)" : "Foto(s) de la guía"}
       </h2>
 
       <MultiImagePicker label="" images={images} onChange={setImages} />
 
       <div>
         <span className="mb-1.5 block text-sm font-medium text-gray-700">
-          ¿Cómo quedó {articulo} {accion}?
+          {verificando
+            ? "Después de contar los ítems, ¿cómo llegó?"
+            : `¿Cómo quedó ${articulo} ${accion}?`}
         </span>
         <div className="grid grid-cols-2 gap-3">
           <button
@@ -108,12 +175,14 @@ export default function CompletarForm({
       <button
         type="button"
         onClick={confirmar}
-        disabled={pending || images.length === 0}
+        disabled={pending || (!verificando && images.length === 0)}
         className="w-full rounded-lg bg-brand py-3 font-semibold text-white transition hover:bg-brand-dark disabled:opacity-50"
       >
         {pending
           ? "Confirmando..."
-          : `Confirmar ${accion} (marcar como ${accionParticipio}${parcial ? " parcialmente" : ""})`}
+          : verificando
+            ? `Cerrar orden (llegó ${parcial ? "parcial" : "completa"})`
+            : `Confirmar ${accion} (marcar como ${accionParticipio}${parcial ? " parcialmente" : ""})`}
       </button>
       <p className="text-center text-xs text-gray-500">
         {TYPE_LABEL[tipo]} · Al confirmar, la orden se marca como completada.

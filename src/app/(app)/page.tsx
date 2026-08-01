@@ -21,11 +21,14 @@ export default async function HomePage() {
   // Conteos según rol
   const base = () => supabase.from("orders").select("*", { count: "exact", head: true });
 
-  const [pendientes, asignadas, completadasHoy, { data: actividad }] = await Promise.all([
+  const [pendientes, asignadas, enTransito, completadasHoy, { data: actividad }] = await Promise.all([
     base().eq("estado", "pendiente"),
     profile.role === "repartidor"
       ? base().eq("estado", "asignado").eq("assigned_to", userId)
       : base().eq("estado", "asignado"),
+    profile.role === "repartidor"
+      ? base().eq("estado", "en_transito").eq("assigned_to", userId)
+      : base().eq("estado", "en_transito"),
     base()
       .eq("estado", "completado")
       .gte("completed_at", new Date(new Date().setHours(0, 0, 0, 0)).toISOString()),
@@ -49,6 +52,12 @@ export default async function HomePage() {
       tone: "bg-amber-50 text-amber-800",
     },
     {
+      // Pedidos ya recogidos que esperan que alguien cuente los ítems.
+      label: profile.role === "repartidor" ? "Recogidas" : "En Tránsito",
+      value: enTransito.count ?? 0,
+      tone: "bg-sky-50 text-sky-800",
+    },
+    {
       label: "Completadas hoy",
       value: completadasHoy.count ?? 0,
       tone: "bg-green-50 text-green-800",
@@ -69,7 +78,7 @@ export default async function HomePage() {
 
       <PushPrompt userId={userId} />
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {cards.map((c) => (
           <div key={c.label} className={`rounded-2xl p-4 ${c.tone}`}>
             <div className="text-3xl font-black">{c.value}</div>

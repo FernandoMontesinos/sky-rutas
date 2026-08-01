@@ -35,6 +35,7 @@ const COLUMNAS: Columna[] = [
   { header: "Repartidor", width: 20, valor: (r) => r.repartidor?.full_name ?? "" },
   { header: "Fecha de creación", width: 18, valor: (r) => fechaHoraLima(r.created_at) },
   { header: "Fecha de asignación", width: 18, valor: (r) => fechaHoraLima(r.assigned_at) },
+  { header: "Fecha de recojo", width: 18, valor: (r) => fechaHoraLima(r.en_transito_at) },
   { header: "Fecha de completado", width: 18, valor: (r) => fechaHoraLima(r.completed_at) },
 ];
 

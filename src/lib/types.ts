@@ -1,6 +1,6 @@
 export type UserRole = "admin" | "vendedor" | "almacen" | "repartidor";
 export type OrderType = "entrega" | "recojo";
-export type OrderStatus = "pendiente" | "asignado" | "completado";
+export type OrderStatus = "pendiente" | "asignado" | "en_transito" | "completado";
 export type Modalidad = "reparto" | "oficina" | "courier";
 
 export type Profile = {
@@ -33,6 +33,7 @@ export type Order = {
   assigned_to: string | null;
   created_at: string;
   assigned_at: string | null;
+  en_transito_at: string | null;
   completed_at: string | null;
 };
 
@@ -52,6 +53,7 @@ export const ROLE_LABEL: Record<UserRole, string> = {
 export const STATUS_LABEL: Record<OrderStatus, string> = {
   pendiente: "Pendiente",
   asignado: "Asignado",
+  en_transito: "En Tránsito",
   completado: "Completado",
 };
 

@@ -187,9 +187,64 @@ export async function updateModalidad(formData: FormData): Promise<void> {
   revalidatePath("/ordenes");
 }
 
+/**
+ * El repartidor confirma que recogió el material del proveedor, subiendo la
+ * guía. NO cierra la orden a propósito: él recibe bultos sellados y no cuenta
+ * los ítems, así que no puede afirmar que llegó completo. La orden queda "En
+ * Tránsito" hasta que alguien CUENTE la mercadería y la cierre con
+ * `completeOrder` — almacén cuando llega al depósito, o el propio repartidor
+ * cuando va directo al cliente y el cliente cuenta y firma delante suyo.
+ */
+export async function marcarEnTransito(
+  _prev: FormResult,
+  formData: FormData
+): Promise<FormResult> {
+  await requireRole(["repartidor", "almacen", "admin"]);
+
+  const orderId = String(formData.get("order_id") ?? "");
+  const guias = formData.getAll("guias").filter((f): f is File => f instanceof File && f.size > 0);
+
+  if (!orderId) return { error: "Orden inválida." };
+  if (guias.length === 0)
+    return { error: "Toma al menos una foto de la guía antes de confirmar." };
+
+  const supabase = await createClient();
+  const { urls, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
+  if (upErr) return { error: "No se pudo subir la foto: " + upErr };
+
+  const { data: updated, error } = await supabase
+    .from("orders")
+    .update({
+      guia_url: urls[0] ?? null,
+      guias_urls: urls,
+      estado: "en_transito",
+      en_transito_at: new Date().toISOString(),
+    })
+    .eq("id", orderId)
+    .select("numero_pedido, cliente")
+    .single();
+  if (error) return { error: error.message };
+
+  const almacenIds = await userIdsByRole("almacen");
+  await notify(almacenIds, {
+    tipo: "orden_en_transito",
+    titulo: "Material recogido — falta verificar",
+    mensaje: `#${updated.numero_pedido}${
+      updated.cliente ? " · " + updated.cliente : ""
+    } — cuenten los ítems para cerrarla.`,
+    orderId,
+  });
+
+  revalidatePath(`/ordenes/${orderId}`);
+  revalidatePath("/ordenes");
+  redirect("/ordenes");
+}
+
 /** Sube una o más fotos de la guía/comprobante y marca la orden como
  *  completada (total o parcial). Repartidor: solo sus órdenes propias.
- *  Almacén/Admin: cualquiera (oficina/courier). */
+ *  Almacén/Admin: cualquiera (oficina/courier). Si la orden ya venía "En
+ *  Tránsito", la guía se subió al recoger, así que acá la foto es opcional
+ *  (quien verifica puede sumar otra si quiere, no reemplaza la anterior). */
 export async function completeOrder(
   _prev: FormResult,
   formData: FormData
@@ -202,14 +257,33 @@ export async function completeOrder(
   const guias = formData.getAll("guias").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!orderId) return { error: "Orden inválida." };
-  if (guias.length === 0)
-    return { error: "Toma al menos una foto de la guía antes de confirmar." };
   if (parcial && !notaFaltante)
     return { error: "Cuéntanos qué falta completar." };
 
   const supabase = await createClient();
-  const { urls, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
-  if (upErr) return { error: "No se pudo subir la foto: " + upErr };
+
+  const { data: actual } = await supabase
+    .from("orders")
+    .select("guias_urls, guia_url")
+    .eq("id", orderId)
+    .single();
+  if (!actual) return { error: "Orden inválida." };
+
+  const guiasPrevias: string[] = actual.guias_urls?.length
+    ? actual.guias_urls
+    : actual.guia_url
+      ? [actual.guia_url]
+      : [];
+
+  if (guias.length === 0 && guiasPrevias.length === 0)
+    return { error: "Toma al menos una foto de la guía antes de confirmar." };
+
+  let urls = guiasPrevias;
+  if (guias.length > 0) {
+    const { urls: nuevas, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
+    if (upErr) return { error: "No se pudo subir la foto: " + upErr };
+    urls = [...guiasPrevias, ...nuevas];
+  }
 
   const { data: updated, error } = await supabase
     .from("orders")
