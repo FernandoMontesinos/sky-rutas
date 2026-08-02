@@ -10,6 +10,7 @@ import { ModalidadForm } from "./modalidad-form";
 import { AsignarForm } from "./asignar-form";
 import { AlmacenOverrideCompletar } from "./almacen-override";
 import CompletarForm, { RecojoForm } from "./completar";
+import { DividirEnvioForm } from "./dividir-envio";
 import { modalidadLabel, type OrderWithNames, type Profile } from "@/lib/types";
 
 const SELECT =
@@ -78,15 +79,23 @@ export default async function OrdenDetallePage({
   // Ya se recogió y falta contar la mercadería: la cierra quien la cuente
   // (almacén al recibirla, o el repartidor si fue directo al cliente).
   const estaEnTransito = order.estado === "en_transito";
+  // Almacén puede partir la orden en varios envíos mientras no esté cerrada.
+  const puedeDividir = canAssign && order.estado !== "completado";
 
   // Backorder: si esta orden viene de una parcial, o si generó una al
   // quedar parcial, se muestra el enlace cruzado para no perder el hilo.
   const [{ data: padre }, { data: hijos }] = await Promise.all([
     order.parent_order_id
-      ? supabase.from("orders").select("id, numero_pedido").eq("id", order.parent_order_id).single()
+      ? supabase.from("orders").select("id, numero_pedido, division_tipo").eq("id", order.parent_order_id).single()
       : Promise.resolve({ data: null }),
-    supabase.from("orders").select("id, numero_pedido, estado").eq("parent_order_id", order.id),
+    supabase
+      .from("orders")
+      .select("id, numero_pedido, estado, division_tipo")
+      .eq("parent_order_id", order.id),
   ]);
+
+  const esEnvioDividido =
+    order.division_tipo === "envio" || (hijos ?? []).some((h) => h.division_tipo === "envio");
 
   let repartidores: Profile[] = [];
   if (canAssign) {
@@ -115,25 +124,40 @@ export default async function OrdenDetallePage({
         <StatusBadge estado={order.estado} parcial={order.entrega_parcial} />
       </div>
 
+      {/* Enlace cruzado con la familia de la orden. El texto depende de POR QUÉ
+          existe la relación: un envío dividido es un despacho planificado y no
+          debe leerse como si algo hubiera fallado. */}
       {(padre || (hijos && hijos.length > 0)) && (
-        <div className="space-y-1.5 rounded-xl border border-orange-200 bg-orange-50 p-3 text-sm">
+        <div
+          className={`space-y-1.5 rounded-xl border p-3 text-sm ${
+            esEnvioDividido ? "border-sky-200 bg-sky-50" : "border-orange-200 bg-orange-50"
+          }`}
+        >
           {padre && (
             <Link
               href={`/ordenes/${padre.id}`}
-              className="flex items-center gap-1.5 font-medium text-orange-800 hover:underline"
+              className={`flex items-center gap-1.5 font-medium hover:underline ${
+                order.division_tipo === "envio" ? "text-sky-800" : "text-orange-800"
+              }`}
             >
               <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={2.25} />
-              Es el remanente de la orden #{padre.numero_pedido} (quedó parcial)
+              {order.division_tipo === "envio"
+                ? `Es el resto pendiente de la orden #${padre.numero_pedido} (se despacha en partes)`
+                : `Es el remanente de la orden #${padre.numero_pedido} (quedó parcial)`}
             </Link>
           )}
           {hijos?.map((h) => (
             <Link
               key={h.id}
               href={`/ordenes/${h.id}`}
-              className="flex items-center gap-1.5 font-medium text-orange-800 hover:underline"
+              className={`flex items-center gap-1.5 font-medium hover:underline ${
+                h.division_tipo === "envio" ? "text-sky-800" : "text-orange-800"
+              }`}
             >
               <GitBranch className="h-3.5 w-3.5 shrink-0" strokeWidth={2.25} />
-              Falta completar: pedido #{h.numero_pedido} ({h.estado})
+              {h.division_tipo === "envio"
+                ? `Se despacha aparte: #${h.numero_pedido} (${h.estado})`
+                : `Falta completar: pedido #${h.numero_pedido} (${h.estado})`}
             </Link>
           ))}
         </div>
@@ -254,6 +278,9 @@ export default async function OrdenDetallePage({
           repartidores={repartidores}
         />
       )}
+
+      {/* Almacén: despachar la orden en varias guías de remisión. */}
+      {puedeDividir && <DividirEnvioForm orderId={order.id} />}
 
       {/* Paso 1 de un Pedido: el repartidor confirma el recojo (sin contar). */}
       {esRecojoPorConfirmar && <RecojoForm orderId={order.id} />}
