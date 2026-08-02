@@ -153,6 +153,23 @@ export default async function OrdenDetallePage({
         </div>
       )}
 
+      {/* Intento(s) fallido(s) de recojo: almacén necesita verlo para
+          coordinar con el proveedor antes de volver a asignarla. */}
+      {order.no_recogido_intentos > 0 && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm">
+          <p className="font-semibold text-red-800">
+            No se pudo recoger
+            {order.no_recogido_intentos > 1 && ` · ${order.no_recogido_intentos} intentos`}
+          </p>
+          {order.no_recogido_motivo && (
+            <p className="mt-0.5 text-red-700">{order.no_recogido_motivo}</p>
+          )}
+          {order.no_recogido_at && (
+            <p className="mt-0.5 text-xs text-red-600">Último intento: {fmt(order.no_recogido_at)}</p>
+          )}
+        </div>
+      )}
+
       {/* Datos */}
       <dl className="grid grid-cols-2 gap-3 rounded-2xl bg-white p-4 text-sm shadow-sm">
         <div className="col-span-2 min-w-0">

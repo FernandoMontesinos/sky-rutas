@@ -1,8 +1,13 @@
 "use client";
 
 import { useActionState, useState, startTransition } from "react";
-import { CheckCircle2, AlertTriangle, Camera, Truck } from "lucide-react";
-import { completeOrder, marcarEnTransito, type FormResult } from "../actions";
+import { CheckCircle2, AlertTriangle, Camera, Truck, PackageX } from "lucide-react";
+import {
+  completeOrder,
+  marcarEnTransito,
+  marcarNoRecogido,
+  type FormResult,
+} from "../actions";
 import { MultiImagePicker, type PickedImage } from "@/components/multi-image-picker";
 import { TYPE_LABEL, type OrderType } from "@/lib/types";
 
@@ -57,7 +62,73 @@ export function RecojoForm({ orderId }: { orderId: string }) {
         Solo confirmas que recogiste el material. No hace falta que cuentes los ítems —
         la orden queda <strong>En Tránsito</strong> hasta que se verifique la cantidad.
       </p>
+
+      <NoRecogidoForm orderId={orderId} />
     </div>
+  );
+}
+
+/**
+ * El otro desenlace posible del viaje al proveedor: fue y no había material.
+ * Va detrás de un paso extra (`<details>`) para que no compita visualmente con
+ * "Confirmar recojo", que es lo que pasa casi siempre.
+ */
+function NoRecogidoForm({ orderId }: { orderId: string }) {
+  const [state, action, pending] = useActionState<FormResult, FormData>(marcarNoRecogido, {});
+  const [motivo, setMotivo] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  function confirmar() {
+    if (motivo.trim().length === 0) {
+      setLocalError("Escribe por qué no se pudo recoger.");
+      return;
+    }
+    setLocalError(null);
+    const fd = new FormData();
+    fd.set("order_id", orderId);
+    fd.set("motivo", motivo.trim());
+    startTransition(() => action(fd));
+  }
+
+  const errorMsg = localError ?? state.error;
+
+  return (
+    <details className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-gray-600">
+        <PackageX className="h-4 w-4 shrink-0 text-gray-400" strokeWidth={2.25} />
+        No se pudo recoger
+      </summary>
+
+      <div className="mt-3 space-y-2">
+        <label htmlFor="motivo_no_recogido" className="block text-xs font-medium text-gray-700">
+          ¿Por qué? Almacén lo va a ver para coordinar con el proveedor.
+        </label>
+        <textarea
+          id="motivo_no_recogido"
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+          rows={2}
+          placeholder="Ej. El proveedor no tenía el material listo, dijeron que el jueves"
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-brand"
+        />
+
+        {errorMsg && (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-dark">{errorMsg}</p>
+        )}
+
+        <button
+          type="button"
+          onClick={confirmar}
+          disabled={pending}
+          className="w-full rounded-lg border-2 border-red-500 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+        >
+          {pending ? "Registrando..." : "Registrar que no se recogió"}
+        </button>
+        <p className="text-center text-xs text-gray-500">
+          La orden vuelve a Pendientes para que almacén la reprograme.
+        </p>
+      </div>
+    </details>
   );
 }
 

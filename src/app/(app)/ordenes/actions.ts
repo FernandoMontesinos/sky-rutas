@@ -240,6 +240,63 @@ export async function marcarEnTransito(
   redirect("/ordenes");
 }
 
+/**
+ * El repartidor fue al proveedor y el material no estaba listo. La orden
+ * vuelve a "pendiente" y queda libre para reasignar — no es un estado del
+ * flujo, es un intento que falló. Se guarda el motivo y se suma un intento
+ * para que se vea qué proveedor está fallando repetido.
+ */
+export async function marcarNoRecogido(
+  _prev: FormResult,
+  formData: FormData
+): Promise<FormResult> {
+  await requireRole(["repartidor", "almacen", "admin"]);
+
+  const orderId = String(formData.get("order_id") ?? "");
+  const motivo = String(formData.get("motivo") ?? "").trim();
+
+  if (!orderId) return { error: "Orden inválida." };
+  if (!motivo) return { error: "Cuéntanos por qué no se pudo recoger." };
+
+  const supabase = await createClient();
+
+  const { data: actual } = await supabase
+    .from("orders")
+    .select("numero_pedido, cliente, no_recogido_intentos")
+    .eq("id", orderId)
+    .single();
+  if (!actual) return { error: "Orden inválida." };
+
+  const intentos = (actual.no_recogido_intentos ?? 0) + 1;
+
+  const { error } = await supabase
+    .from("orders")
+    .update({
+      estado: "pendiente",
+      assigned_to: null,
+      assigned_at: null,
+      no_recogido_intentos: intentos,
+      no_recogido_motivo: motivo,
+      no_recogido_at: new Date().toISOString(),
+    })
+    .eq("id", orderId);
+  if (error) return { error: error.message };
+
+  const almacenIds = await userIdsByRole("almacen");
+  await notify(almacenIds, {
+    tipo: "orden_pendiente",
+    titulo: `No se pudo recoger${intentos > 1 ? ` (intento ${intentos})` : ""}`,
+    mensaje: `#${actual.numero_pedido}${
+      actual.cliente ? " · " + actual.cliente : ""
+    } — ${motivo}`,
+    orderId,
+  });
+
+  revalidatePath(`/ordenes/${orderId}`);
+  revalidatePath("/ordenes");
+  redirect("/ordenes");
+}
+
 /** Sube una o más fotos de la guía/comprobante y marca la orden como
  *  completada (total o parcial). Repartidor: solo sus órdenes propias.
  *  Almacén/Admin: cualquiera (oficina/courier). Si la orden ya venía "En

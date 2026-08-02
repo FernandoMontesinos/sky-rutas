@@ -27,6 +27,10 @@ export type Order = {
   imagenes_urls: string[];
   guias_urls: string[];
   entrega_parcial: boolean;
+  /** Intentos fallidos de recojo: el proveedor no tenía el material listo. */
+  no_recogido_intentos: number;
+  no_recogido_motivo: string | null;
+  no_recogido_at: string | null;
   parent_order_id: string | null;
   nota: string | null;
   created_by: string | null;

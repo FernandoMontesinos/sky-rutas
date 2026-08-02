@@ -102,6 +102,14 @@ function OrderCardCompact({ o }: { o: OrderWithNames }) {
               Parcial
             </span>
           )}
+          {o.no_recogido_intentos > 0 && (
+            <span
+              className="shrink-0 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-700"
+              title={o.no_recogido_motivo ?? undefined}
+            >
+              No recogido{o.no_recogido_intentos > 1 && ` ×${o.no_recogido_intentos}`}
+            </span>
+          )}
           {o.nota && (
             <span
               className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-400"
@@ -168,6 +176,11 @@ function OrderCardDetallado({ o }: { o: OrderWithNames }) {
                 Parcial
               </span>
             )}
+            {o.no_recogido_intentos > 0 && (
+              <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+                No recogido{o.no_recogido_intentos > 1 && ` ×${o.no_recogido_intentos}`}
+              </span>
+            )}
             {o.nota && (
               <StickyNote className="h-3.5 w-3.5 text-gray-400" strokeWidth={2.25} aria-label="Tiene nota" />
             )}
@@ -179,6 +192,11 @@ function OrderCardDetallado({ o }: { o: OrderWithNames }) {
           )}
           {o.proyecto && (
             <div className="truncate text-xs text-gray-500">Proyecto: {o.proyecto}</div>
+          )}
+          {o.no_recogido_motivo && (
+            <div className="truncate text-xs text-red-600" title={o.no_recogido_motivo}>
+              {o.no_recogido_motivo}
+            </div>
           )}
           <div className="flex items-center gap-1 truncate text-xs text-gray-500">
             {o.repartidor ? (
@@ -202,6 +220,7 @@ function Column({
   orders,
   detallado,
   fullWidthMobile = false,
+  separarNoRecogidos = false,
 }: {
   title: string;
   color: string;
@@ -209,10 +228,18 @@ function Column({
   detallado: boolean;
   /** En móvil ocupa todo el ancho (columnas apiladas) en vez de scroll lateral. */
   fullWidthMobile?: boolean;
+  /** Solo en Pendientes: sube arriba las que volvieron por un recojo fallido. */
+  separarNoRecogidos?: boolean;
 }) {
   // Ya no hace falta separar cotizaciones de pedidos dentro de la columna:
   // ahora son dos tableros distintos, cada uno con su propio tipo.
   const Card = detallado ? OrderCardDetallado : OrderCardCompact;
+
+  // Una orden que volvió por "no se recogió" necesita una acción distinta a
+  // una orden nueva (llamar al proveedor vs. asignar repartidor), así que va
+  // agrupada arriba en vez de perdida entre las demás.
+  const noRecogidas = separarNoRecogidos ? orders.filter((o) => o.no_recogido_intentos > 0) : [];
+  const resto = separarNoRecogidos ? orders.filter((o) => o.no_recogido_intentos === 0) : orders;
 
   return (
     <div
@@ -233,7 +260,24 @@ function Column({
         {orders.length === 0 ? (
           <p className="px-1 py-4 text-center text-xs text-gray-400">—</p>
         ) : (
-          orders.map((o) => <Card key={o.id} o={o} />)
+          <>
+            {noRecogidas.length > 0 && (
+              <>
+                <div className="flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-red-500">
+                  <span className="h-px flex-1 bg-red-200" />
+                  No se pudo recoger
+                  <span className="h-px flex-1 bg-red-200" />
+                </div>
+                {noRecogidas.map((o) => (
+                  <Card key={o.id} o={o} />
+                ))}
+                {resto.length > 0 && <div className="my-1 h-px bg-gray-300" />}
+              </>
+            )}
+            {resto.map((o) => (
+              <Card key={o.id} o={o} />
+            ))}
+          </>
         )}
       </div>
     </div>
@@ -414,10 +458,11 @@ export default async function OrdenesPage({
     completadas = completadas.eq("modalidad", fModalidad);
   }
   if (soloProblema) {
-    // Por ahora solo las parciales. Cuando existan "no recogido" y los envíos
-    // divididos (fases siguientes) se suman acá con un .or().
-    activas = activas.eq("entrega_parcial", true);
-    completadas = completadas.eq("entrega_parcial", true);
+    // Todo lo que necesita atención: entregas parciales y recojos fallidos.
+    // (Los envíos divididos se suman acá en la fase siguiente.)
+    const filtroProblema = "entrega_parcial.eq.true,no_recogido_intentos.gt.0";
+    activas = activas.or(filtroProblema);
+    completadas = completadas.or(filtroProblema);
   }
 
   const [{ data: act }, { data: comp }] = await Promise.all([activas, completadas]);
@@ -681,7 +726,13 @@ export default async function OrdenesPage({
               Pedidos · Proveedor
             </h2>
             <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
-              <Column title="Pendientes" color="bg-gray-400" orders={activasDe("recojo", "pendiente")} detallado={detallado} />
+              <Column
+                title="Pendientes"
+                color="bg-gray-400"
+                orders={activasDe("recojo", "pendiente")}
+                detallado={detallado}
+                separarNoRecogidos
+              />
               <Column title="Asignadas" color="bg-amber-500" orders={activasDe("recojo", "asignado")} detallado={detallado} />
               <Column title="En Tránsito" color="bg-sky-500" orders={activasDe("recojo", "en_transito")} detallado={detallado} />
               <Column
