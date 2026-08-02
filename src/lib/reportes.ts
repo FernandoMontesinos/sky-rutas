@@ -88,7 +88,7 @@ export function campoFecha(eje: EjeFecha) {
  * comas y paréntesis como separadores, así que un cliente con coma en el
  * nombre rompería la consulta si se pasara tal cual.
  */
-function limpiarBusqueda(q: string) {
+export function limpiarBusqueda(q: string) {
   return q.replace(/[,()*%\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
 }
 

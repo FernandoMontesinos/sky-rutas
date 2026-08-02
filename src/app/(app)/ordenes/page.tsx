@@ -10,17 +10,23 @@ import {
   AlignLeft,
   FileText,
   ChevronDown,
+  Search,
 } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
-import { ymdLima } from "@/lib/reportes";
+import { limpiarBusqueda, ymdLima } from "@/lib/reportes";
 import {
   MODALIDAD_SHORT,
+  modalidadLabel,
+  type Modalidad,
   type OrderStatus,
   type OrderType,
   type OrderWithNames,
+  type Profile,
 } from "@/lib/types";
+
+const MODALIDADES: Modalidad[] = ["reparto", "oficina", "courier"];
 
 /** Inicial para el avatar del repartidor en la vista compacta. */
 function inicial(nombre: string | undefined) {
@@ -294,50 +300,78 @@ function TablaOrdenes({ orders }: { orders: OrderWithNames[] }) {
 export default async function OrdenesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ vista?: string; formato?: string; densidad?: string; rango?: string }>;
+  searchParams: Promise<{
+    vista?: string;
+    formato?: string;
+    densidad?: string;
+    rango?: string;
+    q?: string;
+    repartidor?: string;
+    vendedor?: string;
+    modalidad?: string;
+    problema?: string;
+  }>;
 }) {
   const { userId, profile } = await requireUser();
-  const { vista, formato: formatoParam, densidad: densidadParam, rango: rangoParam } =
-    await searchParams;
+  const sp = await searchParams;
   const supabase = await createClient();
   const isRepartidor = profile.role === "repartidor";
-  const verTodas = isRepartidor && vista === "todas";
-  const formato = formatoParam === "tabla" ? "tabla" : "kanban";
+  const verTodas = isRepartidor && sp.vista === "todas";
+  const formato = sp.formato === "tabla" ? "tabla" : "kanban";
   // Compacto por defecto: es la vista pensada para decidir de un vistazo;
   // detallado es la que ya existía, con imagen/modalidad/creador.
-  const detallado = densidadParam === "detallada";
+  const detallado = sp.densidad === "detallada";
   const rango: RangoCompletadas =
-    rangoParam === "semana" || rangoParam === "mes" ? rangoParam : "hoy";
+    sp.rango === "semana" || sp.rango === "mes" ? sp.rango : "hoy";
 
-  function hrefFormato(f: "kanban" | "tabla") {
+  const q = limpiarBusqueda(sp.q ?? "");
+  const fRepartidor = sp.repartidor?.trim() || "";
+  const fVendedor = sp.vendedor?.trim() || "";
+  const fModalidad = MODALIDADES.includes(sp.modalidad as Modalidad)
+    ? (sp.modalidad as Modalidad)
+    : "";
+  const soloProblema = sp.problema === "1";
+  const hayFiltro = !!(q || fRepartidor || fVendedor || fModalidad || soloProblema);
+
+  /**
+   * Enlace a esta misma pantalla cambiando solo lo que se le pase. Antes cada
+   * control rearmaba la lista completa de parámetros y había que tocar los
+   * tres al agregar uno nuevo.
+   */
+  function href(cambios: Record<string, string | undefined> = {}) {
+    const actual: Record<string, string | undefined> = {
+      vista: verTodas ? "todas" : undefined,
+      formato: formato === "tabla" ? "tabla" : undefined,
+      densidad: detallado ? "detallada" : undefined,
+      rango: rango !== "hoy" ? rango : undefined,
+      q: q || undefined,
+      repartidor: fRepartidor || undefined,
+      vendedor: fVendedor || undefined,
+      modalidad: fModalidad || undefined,
+      problema: soloProblema ? "1" : undefined,
+    };
     const params = new URLSearchParams();
-    if (verTodas) params.set("vista", "todas");
-    if (f === "tabla") params.set("formato", "tabla");
-    if (detallado) params.set("densidad", "detallada");
-    if (rango !== "hoy") params.set("rango", rango);
+    for (const [clave, valor] of Object.entries({ ...actual, ...cambios })) {
+      if (valor) params.set(clave, valor);
+    }
     const qs = params.toString();
     return qs ? `/ordenes?${qs}` : "/ordenes";
   }
 
-  function hrefDensidad(d: "compacto" | "detallada") {
-    const params = new URLSearchParams();
-    if (verTodas) params.set("vista", "todas");
-    if (formato === "tabla") params.set("formato", "tabla");
-    if (d === "detallada") params.set("densidad", "detallada");
-    if (rango !== "hoy") params.set("rango", rango);
-    const qs = params.toString();
-    return qs ? `/ordenes?${qs}` : "/ordenes";
-  }
-
-  function hrefRango(r: RangoCompletadas) {
-    const params = new URLSearchParams();
-    if (verTodas) params.set("vista", "todas");
-    if (formato === "tabla") params.set("formato", "tabla");
-    if (detallado) params.set("densidad", "detallada");
-    if (r !== "hoy") params.set("rango", r);
-    const qs = params.toString();
-    return qs ? `/ordenes?${qs}` : "/ordenes";
-  }
+  // Las personas para los selectores de filtro, y —si se está buscando por
+  // texto— los ids de quienes coinciden por nombre: no se puede filtrar por
+  // una columna de tabla unida dentro de un .or(), así que el nombre del
+  // vendedor se resuelve a ids antes de armar la consulta de órdenes.
+  const [{ data: personasData }, { data: creadoresData }] = await Promise.all([
+    supabase.from("profiles").select("id, full_name, role").eq("activo", true).order("full_name"),
+    q
+      ? supabase.from("profiles").select("id").ilike("full_name", `%${q}%`)
+      : Promise.resolve({ data: [] as { id: string }[] }),
+  ]);
+  const personas = (personasData ?? []) as Profile[];
+  const repartidores = personas.filter((p) => p.role === "repartidor");
+  const vendedores = personas.filter((p) => p.role === "vendedor" || p.role === "admin");
+  const idsCreador = (creadoresData ?? []).map((p) => p.id);
 
   // Activas (pendiente + asignado + en tránsito) y completadas (según el rango elegido).
   let activas = supabase
@@ -357,6 +391,33 @@ export default async function OrdenesPage({
   if (isRepartidor && !verTodas) {
     activas = activas.eq("assigned_to", userId);
     completadas = completadas.eq("assigned_to", userId);
+  }
+
+  if (q) {
+    const condiciones = [`numero_pedido.ilike.%${q}%`, `cliente.ilike.%${q}%`];
+    // Solo si hay coincidencias: `created_by.in.()` vacío es sintaxis inválida.
+    if (idsCreador.length > 0) condiciones.push(`created_by.in.(${idsCreador.join(",")})`);
+    const filtroO = condiciones.join(",");
+    activas = activas.or(filtroO);
+    completadas = completadas.or(filtroO);
+  }
+  if (fRepartidor) {
+    activas = activas.eq("assigned_to", fRepartidor);
+    completadas = completadas.eq("assigned_to", fRepartidor);
+  }
+  if (fVendedor) {
+    activas = activas.eq("created_by", fVendedor);
+    completadas = completadas.eq("created_by", fVendedor);
+  }
+  if (fModalidad) {
+    activas = activas.eq("modalidad", fModalidad);
+    completadas = completadas.eq("modalidad", fModalidad);
+  }
+  if (soloProblema) {
+    // Por ahora solo las parciales. Cuando existan "no recogido" y los envíos
+    // divididos (fases siguientes) se suman acá con un .or().
+    activas = activas.eq("entrega_parcial", true);
+    completadas = completadas.eq("entrega_parcial", true);
   }
 
   const [{ data: act }, { data: comp }] = await Promise.all([activas, completadas]);
@@ -384,7 +445,7 @@ export default async function OrdenesPage({
           {isRepartidor && (
             <div className="inline-flex rounded-xl bg-gray-100 p-1">
               <Link
-                href="/ordenes"
+                href={href({ vista: undefined })}
                 className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
                   !verTodas ? "bg-white text-brand shadow-sm" : "text-gray-500"
                 }`}
@@ -393,7 +454,7 @@ export default async function OrdenesPage({
                 Mi ruta
               </Link>
               <Link
-                href="/ordenes?vista=todas"
+                href={href({ vista: "todas" })}
                 className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
                   verTodas ? "bg-white text-brand shadow-sm" : "text-gray-500"
                 }`}
@@ -406,7 +467,7 @@ export default async function OrdenesPage({
 
           <div className="inline-flex rounded-xl bg-gray-100 p-1">
             <Link
-              href={hrefFormato("kanban")}
+              href={href({ formato: undefined })}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
                 formato === "kanban" ? "bg-white text-brand shadow-sm" : "text-gray-500"
               }`}
@@ -415,7 +476,7 @@ export default async function OrdenesPage({
               Kanban
             </Link>
             <Link
-              href={hrefFormato("tabla")}
+              href={href({ formato: "tabla" })}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
                 formato === "tabla" ? "bg-white text-brand shadow-sm" : "text-gray-500"
               }`}
@@ -429,7 +490,7 @@ export default async function OrdenesPage({
         {formato === "kanban" && (
           <div className="inline-flex rounded-xl bg-gray-100 p-1">
             <Link
-              href={hrefDensidad("compacto")}
+              href={href({ densidad: undefined })}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
                 !detallado ? "bg-white text-brand shadow-sm" : "text-gray-500"
               }`}
@@ -438,7 +499,7 @@ export default async function OrdenesPage({
               Compacta
             </Link>
             <Link
-              href={hrefDensidad("detallada")}
+              href={href({ densidad: "detallada" })}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
                 detallado ? "bg-white text-brand shadow-sm" : "text-gray-500"
               }`}
@@ -456,7 +517,7 @@ export default async function OrdenesPage({
           {(["hoy", "semana", "mes"] as RangoCompletadas[]).map((r) => (
             <Link
               key={r}
-              href={hrefRango(r)}
+              href={href({ rango: r === "hoy" ? undefined : r })}
               className={`rounded-lg px-3 py-1 font-semibold transition ${
                 rango === r ? "bg-white text-brand shadow-sm" : "text-gray-500"
               }`}
@@ -466,6 +527,115 @@ export default async function OrdenesPage({
           ))}
         </div>
       </div>
+
+      {/*
+        Buscador y filtros como form GET: el estado vive en la URL (enlace
+        compartible) y funciona sin JavaScript. Los toggles de arriba son
+        enlaces, así que hay que llevarlos como campos ocultos para no
+        perderlos al buscar.
+      */}
+      <form method="get" className="flex flex-wrap items-end gap-2">
+        {verTodas && <input type="hidden" name="vista" value="todas" />}
+        {formato === "tabla" && <input type="hidden" name="formato" value="tabla" />}
+        {detallado && <input type="hidden" name="densidad" value="detallada" />}
+        {rango !== "hoy" && <input type="hidden" name="rango" value={rango} />}
+
+        {/* Sin id: este bloque se renderiza dos veces (móvil y escritorio) y
+            un id repetido sería HTML inválido. */}
+        <div className="min-w-[200px] flex-1">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+              strokeWidth={2.25}
+            />
+            <input
+              name="q"
+              aria-label="Buscar órdenes"
+              defaultValue={q}
+              placeholder="N° de orden, cliente/proveedor o quién la creó"
+              className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+            />
+          </div>
+        </div>
+
+        {!isRepartidor && (
+          <>
+            <select
+              name="repartidor"
+              defaultValue={fRepartidor}
+              aria-label="Filtrar por repartidor"
+              className="rounded-lg border border-gray-300 px-2 py-2 text-sm outline-none focus:border-brand"
+            >
+              <option value="">Repartidor: todos</option>
+              {repartidores.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              name="vendedor"
+              defaultValue={fVendedor}
+              aria-label="Filtrar por quién la creó"
+              className="rounded-lg border border-gray-300 px-2 py-2 text-sm outline-none focus:border-brand"
+            >
+              <option value="">Creado por: todos</option>
+              {vendedores.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+
+        <select
+          name="modalidad"
+          defaultValue={fModalidad}
+          aria-label="Filtrar por modalidad"
+          className="rounded-lg border border-gray-300 px-2 py-2 text-sm outline-none focus:border-brand"
+        >
+          <option value="">Modalidad: todas</option>
+          {MODALIDADES.map((m) => (
+            <option key={m} value={m}>
+              {modalidadLabel(m, "entrega")}
+            </option>
+          ))}
+        </select>
+
+        <label className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700">
+          <input
+            type="checkbox"
+            name="problema"
+            value="1"
+            defaultChecked={soloProblema}
+            className="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand"
+          />
+          Con problema
+        </label>
+
+        <button
+          type="submit"
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark"
+        >
+          Buscar
+        </button>
+        {hayFiltro && (
+          <Link
+            href={href({
+              q: undefined,
+              repartidor: undefined,
+              vendedor: undefined,
+              modalidad: undefined,
+              problema: undefined,
+            })}
+            className="rounded-lg px-3 py-2 text-sm font-medium text-gray-500 transition hover:text-brand"
+          >
+            Limpiar
+          </Link>
+        )}
+      </form>
     </>
   );
 
