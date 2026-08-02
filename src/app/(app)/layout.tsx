@@ -11,7 +11,9 @@ import { signOut } from "./actions";
 type NavItem = NavEntry & { roles: UserRole[] };
 
 const NAV: NavItem[] = [
-  { href: "/", label: "Inicio", icon: "home", roles: ["admin", "vendedor", "almacen", "repartidor"] },
+  // Inicio no aplica al repartidor: su pantalla es la lista de órdenes y la
+  // home lo redirige ahí (ver app/(app)/page.tsx).
+  { href: "/", label: "Inicio", icon: "home", roles: ["admin", "vendedor", "almacen"] },
   { href: "/ordenes/nueva", label: "Nueva orden", short: "Nueva", icon: "package-plus", roles: ["admin", "vendedor"] },
   { href: "/ordenes", label: "Órdenes", icon: "clipboard-list", roles: ["admin", "vendedor", "almacen", "repartidor"] },
   { href: "/mapa", label: "Mapa", icon: "map", roles: ["admin", "almacen", "vendedor"] },

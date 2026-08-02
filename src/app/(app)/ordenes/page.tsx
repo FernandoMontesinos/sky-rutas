@@ -15,7 +15,12 @@ import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
 import { ymdLima } from "@/lib/reportes";
-import { MODALIDAD_SHORT, type OrderStatus, type OrderWithNames } from "@/lib/types";
+import {
+  MODALIDAD_SHORT,
+  type OrderStatus,
+  type OrderType,
+  type OrderWithNames,
+} from "@/lib/types";
 
 /** Inicial para el avatar del repartidor en la vista compacta. */
 function inicial(nombre: string | undefined) {
@@ -79,9 +84,13 @@ function OrderCardCompact({ o }: { o: OrderWithNames }) {
         {o.tipo === "entrega" ? "S" : "P"}
       </span>
 
+      {/* Empresa primero: almacén busca por nombre de cliente/proveedor, no
+          por número. El número queda debajo como dato de referencia. */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-sm font-bold text-gray-900">#{o.numero_pedido}</span>
+          <span className="truncate text-sm font-bold text-gray-900">
+            {o.cliente || `#${o.numero_pedido}`}
+          </span>
           {o.entrega_parcial && (
             <span className="shrink-0 rounded-full bg-orange-100 px-1.5 py-0.5 text-[9px] font-bold text-orange-800">
               Parcial
@@ -95,7 +104,7 @@ function OrderCardCompact({ o }: { o: OrderWithNames }) {
             />
           )}
         </div>
-        {o.cliente && <div className="truncate text-xs text-gray-500">{o.cliente}</div>}
+        {o.cliente && <div className="truncate text-xs text-gray-500">#{o.numero_pedido}</div>}
       </div>
 
       {o.repartidor && (
@@ -141,8 +150,11 @@ function OrderCardDetallado({ o }: { o: OrderWithNames }) {
           </div>
         )}
         <div className="min-w-0 flex-1">
+          {/* Igual que en la compacta: manda el nombre de la empresa. */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="truncate font-bold text-gray-900">#{o.numero_pedido}</span>
+            <span className="truncate font-bold text-gray-900">
+              {o.cliente || `#${o.numero_pedido}`}
+            </span>
             <TypeBadge tipo={o.tipo} />
             <ModalidadBadge modalidad={o.modalidad} />
             {o.entrega_parcial && (
@@ -155,7 +167,9 @@ function OrderCardDetallado({ o }: { o: OrderWithNames }) {
             )}
           </div>
           {o.cliente && (
-            <div className="mt-0.5 truncate text-xs font-medium text-gray-700">{o.cliente}</div>
+            <div className="mt-0.5 truncate text-xs font-medium text-gray-500">
+              #{o.numero_pedido}
+            </div>
           )}
           {o.proyecto && (
             <div className="truncate text-xs text-gray-500">Proyecto: {o.proyecto}</div>
@@ -190,11 +204,8 @@ function Column({
   /** En móvil ocupa todo el ancho (columnas apiladas) en vez de scroll lateral. */
   fullWidthMobile?: boolean;
 }) {
-  // Cotizaciones (Cliente) arriba, pedidos de compra (Proveedor) abajo,
-  // separados con un rótulo — antes se mezclaban sin distinción dentro
-  // de la misma columna.
-  const cotizaciones = orders.filter((o) => o.tipo === "entrega");
-  const pedidos = orders.filter((o) => o.tipo === "recojo");
+  // Ya no hace falta separar cotizaciones de pedidos dentro de la columna:
+  // ahora son dos tableros distintos, cada uno con su propio tipo.
   const Card = detallado ? OrderCardDetallado : OrderCardCompact;
 
   return (
@@ -216,21 +227,7 @@ function Column({
         {orders.length === 0 ? (
           <p className="px-1 py-4 text-center text-xs text-gray-400">—</p>
         ) : (
-          <>
-            {cotizaciones.map((o) => (
-              <Card key={o.id} o={o} />
-            ))}
-            {cotizaciones.length > 0 && pedidos.length > 0 && (
-              <div className="my-1 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                <span className="h-px flex-1 bg-gray-300" />
-                Pedidos de compra
-                <span className="h-px flex-1 bg-gray-300" />
-              </div>
-            )}
-            {pedidos.map((o) => (
-              <Card key={o.id} o={o} />
-            ))}
-          </>
+          orders.map((o) => <Card key={o.id} o={o} />)
         )}
       </div>
     </div>
@@ -369,6 +366,14 @@ export default async function OrdenesPage({
   const byEstado = (e: OrderStatus) => activasList.filter((o) => o.estado === e);
   const mostrarTodasLasColumnas = !isRepartidor || verTodas;
 
+  // Dos tableros separados: los Pedidos (Proveedor) tienen 4 etapas porque
+  // pasan por "En Tránsito", las Cotizaciones (Cliente) solo 3. Mezclarlos
+  // obligaba a mirar columnas que no aplicaban a la mitad de las órdenes.
+  // Pedidos va arriba porque hay más recojos que entregas (pedido de almacén).
+  const activasDe = (tipo: OrderType, e: OrderStatus) =>
+    activasList.filter((o) => o.tipo === tipo && o.estado === e);
+  const completadasDe = (tipo: OrderType) => completadasList.filter((o) => o.tipo === tipo);
+
   // En celular estos controles ocupaban 3 filas antes de llegar a ver una
   // sola orden — se agrupan en un <details> colapsable (sin JS) solo en
   // esa pantalla; de sm en adelante se ven siempre, como antes.
@@ -496,21 +501,48 @@ export default async function OrdenesPage({
       {formato === "tabla" ? (
         <TablaOrdenes orders={[...activasList, ...completadasList]} />
       ) : mostrarTodasLasColumnas ? (
-        <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
-          <Column title="Pendientes" color="bg-gray-400" orders={byEstado("pendiente")} detallado={detallado} />
-          <Column title="Asignadas" color="bg-amber-500" orders={byEstado("asignado")} detallado={detallado} />
-          <Column
-            title="En Tránsito"
-            color="bg-sky-500"
-            orders={byEstado("en_transito")}
-            detallado={detallado}
-          />
-          <Column
-            title={`Completadas · ${RANGO_LABEL[rango]}`}
-            color="bg-green-500"
-            orders={completadasList}
-            detallado={detallado}
-          />
+        <div className="space-y-5">
+          {/* Pedidos (Proveedor) primero: son los que más movimiento tienen. */}
+          <section className="space-y-2">
+            <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gray-500">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-[10px] font-bold text-white">
+                P
+              </span>
+              Pedidos · Proveedor
+            </h2>
+            <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
+              <Column title="Pendientes" color="bg-gray-400" orders={activasDe("recojo", "pendiente")} detallado={detallado} />
+              <Column title="Asignadas" color="bg-amber-500" orders={activasDe("recojo", "asignado")} detallado={detallado} />
+              <Column title="En Tránsito" color="bg-sky-500" orders={activasDe("recojo", "en_transito")} detallado={detallado} />
+              <Column
+                title={`Completadas · ${RANGO_LABEL[rango]}`}
+                color="bg-green-500"
+                orders={completadasDe("recojo")}
+                detallado={detallado}
+              />
+            </div>
+          </section>
+
+          {/* Cotizaciones (Cliente): no pasan por "En Tránsito" — el cliente
+              cuenta la mercadería en el momento de la entrega. */}
+          <section className="space-y-2">
+            <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gray-500">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-[10px] font-bold text-brand">
+                S
+              </span>
+              Cotizaciones · Cliente
+            </h2>
+            <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
+              <Column title="Pendientes" color="bg-gray-400" orders={activasDe("entrega", "pendiente")} detallado={detallado} />
+              <Column title="Asignadas" color="bg-amber-500" orders={activasDe("entrega", "asignado")} detallado={detallado} />
+              <Column
+                title={`Completadas · ${RANGO_LABEL[rango]}`}
+                color="bg-green-500"
+                orders={completadasDe("entrega")}
+                detallado={detallado}
+              />
+            </div>
+          </section>
         </div>
       ) : (
         /* Repartidor viendo solo lo suyo: columnas apiladas en móvil, sin scroll lateral */
