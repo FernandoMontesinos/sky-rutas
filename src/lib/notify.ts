@@ -17,6 +17,7 @@ export type NotifTipo =
   | "orden_pendiente"
   | "orden_asignada"
   | "orden_en_transito"
+  | "orden_editada"
   | "orden_completada"
   | "orden_parcial";
 
@@ -74,7 +75,11 @@ export async function notify(
   const supabase = await createClient();
   const url = opts.url ?? (opts.orderId ? `/ordenes/${opts.orderId}` : "/ordenes");
 
-  await supabase.from("notifications").insert(
+  // Se mira el error a propósito: supabase-js no lanza excepción ante un fallo
+  // de base, devuelve { error }. Sin esto, un tipo que no existe en el enum
+  // notif_tipo (o cualquier rechazo de RLS) desaparecía sin dejar rastro y la
+  // notificación simplemente no llegaba, sin forma de saber por qué.
+  const { error } = await supabase.from("notifications").insert(
     unicos.map((user_id) => ({
       user_id,
       order_id: opts.orderId ?? null,
@@ -83,6 +88,13 @@ export async function notify(
       mensaje: opts.mensaje,
     }))
   );
+  if (error) {
+    console.error("[notify] no se pudo guardar la notificación", {
+      tipo: opts.tipo,
+      code: error.code,
+      message: error.message,
+    });
+  }
 
   await Promise.all(
     unicos.map((id) => sendPushToUser(supabase, id, { title: opts.titulo, body: opts.mensaje, url }))

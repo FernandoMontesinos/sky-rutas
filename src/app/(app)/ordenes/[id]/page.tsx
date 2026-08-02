@@ -11,6 +11,9 @@ import { AsignarForm } from "./asignar-form";
 import { AlmacenOverrideCompletar } from "./almacen-override";
 import CompletarForm, { RecojoForm } from "./completar";
 import { DividirEnvioForm } from "./dividir-envio";
+import { EditarOrdenForm } from "./editar-form";
+import { HistorialPanel } from "./historial-panel";
+import type { OrderEvent } from "@/lib/historial";
 import { modalidadLabel, type OrderWithNames, type Profile } from "@/lib/types";
 
 const SELECT =
@@ -97,6 +100,20 @@ export default async function OrdenDetallePage({
   const esEnvioDividido =
     order.division_tipo === "envio" || (hijos ?? []).some((h) => h.division_tipo === "envio");
 
+  // Historial completo de la orden, visible para todos los roles.
+  const { data: eventosData } = await supabase
+    .from("order_events")
+    .select("id, tipo, campo, valor_antes, valor_despues, nota, created_at, autor:profiles!order_events_user_id_fkey(full_name)")
+    .eq("order_id", order.id)
+    .order("created_at", { ascending: false });
+  const eventos = (eventosData ?? []) as unknown as OrderEvent[];
+
+  // Ventas corrige datos solo mientras nadie la haya tomado: después ya se
+  // usaron para despachar. Cualquier vendedor puede, no solo quien la creó.
+  const puedeEditar =
+    order.estado === "pendiente" &&
+    (profile.role === "vendedor" || profile.role === "admin" || isAlmacen);
+
   let repartidores: Profile[] = [];
   if (canAssign) {
     const { data: reps } = await supabase
@@ -122,6 +139,9 @@ export default async function OrdenDetallePage({
         <TypeBadge tipo={order.tipo} />
         <ModalidadBadge modalidad={order.modalidad} />
         <StatusBadge estado={order.estado} parcial={order.entrega_parcial} />
+        <div className="ml-auto">
+          <HistorialPanel eventos={eventos} />
+        </div>
       </div>
 
       {/* Enlace cruzado con la familia de la orden. El texto depende de POR QUÉ
@@ -276,6 +296,21 @@ export default async function OrdenDetallePage({
           orderId={order.id}
           assignedTo={order.assigned_to}
           repartidores={repartidores}
+        />
+      )}
+
+      {/* Ventas corrige datos mientras la orden siga sin tomarse. */}
+      {puedeEditar && (
+        <EditarOrdenForm
+          orderId={order.id}
+          tipo={order.tipo}
+          valores={{
+            cliente: order.cliente,
+            proyecto: order.proyecto,
+            nota: order.nota,
+            proveedor: order.proveedor,
+            numero_pedido_compra: order.numero_pedido_compra,
+          }}
         />
       )}
 

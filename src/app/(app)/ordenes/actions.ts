@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { notify, userIdsByRole } from "@/lib/notify";
 import { DIVISION_SUFIJO, type DivisionTipo } from "@/lib/types";
+import { CAMPO_LABEL, registrarEvento, registrarEventos } from "@/lib/historial";
 
 export type FormResult = { error?: string; ok?: boolean };
 
@@ -242,6 +243,8 @@ export async function createOrder(
     return { error: insErr.message };
   }
 
+  await registrarEvento(supabase, inserted.id, "creada");
+
   const almacenIds = await userIdsByRole("almacen");
   await notify(almacenIds, {
     tipo: "orden_pendiente",
@@ -269,6 +272,7 @@ export async function assignOrder(formData: FormData): Promise<void> {
       .from("orders")
       .update({ assigned_to: null, estado: "pendiente", assigned_at: null })
       .eq("id", orderId);
+    await registrarEvento(supabase, orderId, "desasignada");
   } else {
     const { data: updated } = await supabase
       .from("orders")
@@ -278,10 +282,12 @@ export async function assignOrder(formData: FormData): Promise<void> {
         assigned_at: new Date().toISOString(),
       })
       .eq("id", orderId)
-      .select("numero_pedido, cliente")
+      .select("numero_pedido, cliente, repartidor:profiles!orders_assigned_to_fkey(full_name)")
       .single();
 
     if (updated) {
+      const nombre = (updated.repartidor as unknown as { full_name: string } | null)?.full_name;
+      await registrarEvento(supabase, orderId, "asignada", nombre ?? null);
       await notify([repartidorId], {
         tipo: "orden_asignada",
         titulo: "Te asignaron una orden",
@@ -313,6 +319,8 @@ export async function updateModalidad(formData: FormData): Promise<void> {
       courier_tracking: modalidad === "courier" ? tracking : null,
     })
     .eq("id", orderId);
+
+  await registrarEvento(supabase, orderId, "modalidad", modalidad);
 
   revalidatePath(`/ordenes/${orderId}`);
   revalidatePath("/ordenes");
@@ -355,6 +363,8 @@ export async function marcarEnTransito(
     .select("numero_pedido, cliente")
     .single();
   if (error) return { error: error.message };
+
+  await registrarEvento(supabase, orderId, "recogida");
 
   const almacenIds = await userIdsByRole("almacen");
   await notify(almacenIds, {
@@ -413,6 +423,8 @@ export async function marcarNoRecogido(
     .eq("id", orderId);
   if (error) return { error: error.message };
 
+  await registrarEvento(supabase, orderId, "no_recogida", motivo);
+
   const almacenIds = await userIdsByRole("almacen");
   await notify(almacenIds, {
     tipo: "orden_pendiente",
@@ -426,6 +438,109 @@ export async function marcarNoRecogido(
   revalidatePath(`/ordenes/${orderId}`);
   revalidatePath("/ordenes");
   redirect("/ordenes");
+}
+
+/** Campos que Ventas puede corregir después de crear la orden. El número
+ *  queda fuera a propósito: es la identidad de la orden, tiene índice único y
+ *  el trigger de la base lo bloquea aunque alguien llame a la API directo. */
+const CAMPOS_EDITABLES = [
+  "cliente",
+  "proyecto",
+  "nota",
+  "proveedor",
+  "numero_pedido_compra",
+] as const;
+
+/**
+ * Ventas corrige los datos de una orden. Cualquier vendedor puede hacerlo, no
+ * solo quien la creó (Ventas2 arregla lo que cargó Ventas1), pero solo
+ * mientras siga Pendiente: una vez que almacén la tomó, los datos ya se usaron
+ * para despachar.
+ *
+ * Cada campo que realmente cambió queda en el historial con su valor anterior.
+ */
+export async function editarOrden(
+  _prev: FormResult,
+  formData: FormData
+): Promise<FormResult> {
+  const { userId } = await requireRole(["vendedor", "admin", "almacen"]);
+
+  const orderId = String(formData.get("order_id") ?? "");
+  if (!orderId) return { error: "Orden inválida." };
+
+  const supabase = await createClient();
+
+  const { data: actual } = await supabase
+    .from("orders")
+    .select("id, estado, tipo, numero_pedido, cliente, proyecto, nota, proveedor, numero_pedido_compra, created_by")
+    .eq("id", orderId)
+    .single();
+  if (!actual) return { error: "Orden inválida." };
+  if (actual.estado !== "pendiente")
+    return {
+      error: "Esta orden ya está en camino; para corregirla ahora habla con almacén.",
+    };
+
+  const cambios: Record<string, string | null> = {};
+  const eventos: Array<{
+    tipo: "editada";
+    campo: string;
+    valorAntes: string | null;
+    valorDespues: string | null;
+  }> = [];
+
+  for (const campo of CAMPOS_EDITABLES) {
+    // Un campo ausente en el formulario no se toca (el bloque de compra solo
+    // se envía cuando la orden es de tipo Cliente).
+    if (!formData.has(campo)) continue;
+    const nuevo = String(formData.get(campo) ?? "").trim() || null;
+    const anterior = (actual as Record<string, unknown>)[campo] as string | null;
+    if (nuevo !== anterior) {
+      cambios[campo] = nuevo;
+      eventos.push({ tipo: "editada", campo, valorAntes: anterior, valorDespues: nuevo });
+    }
+  }
+
+  if (eventos.length === 0) return { ok: true };
+
+  // `.select().single()` a propósito: si RLS descarta la fila, PostgREST
+  // devuelve cero filas SIN error, y la acción reportaría éxito de un cambio
+  // que nunca ocurrió (y el historial registraría una mentira).
+  const { data: guardada, error } = await supabase
+    .from("orders")
+    .update(cambios)
+    .eq("id", orderId)
+    .select("id")
+    .single();
+  if (error || !guardada) {
+    return { error: error?.message ?? "No tienes permiso para editar esta orden." };
+  }
+
+  await registrarEventos(supabase, orderId, eventos);
+
+  // Avisa a quien la creó (si no es quien edita), a almacén y a los admin:
+  // almacén puede estar por despacharla con el dato viejo.
+  const [almacenIds, adminIds] = await Promise.all([
+    userIdsByRole("almacen"),
+    userIdsByRole("admin"),
+  ]);
+  const destinatarios = [
+    ...(actual.created_by && actual.created_by !== userId ? [actual.created_by] : []),
+    ...almacenIds,
+    ...adminIds,
+  ].filter((id) => id !== userId);
+
+  const resumen = eventos.map((e) => CAMPO_LABEL[e.campo] ?? e.campo).join(", ");
+  await notify(destinatarios, {
+    tipo: "orden_editada",
+    titulo: "Orden modificada",
+    mensaje: `#${actual.numero_pedido} — se corrigió: ${resumen}.`,
+    orderId,
+  });
+
+  revalidatePath(`/ordenes/${orderId}`);
+  revalidatePath("/ordenes");
+  return { ok: true };
 }
 
 /**
@@ -463,6 +578,9 @@ export async function dividirEnvio(
 
   const hija = await crearOrdenHija(supabase, padre, "envio", nota);
   if ("error" in hija) return { error: hija.error };
+
+  await registrarEvento(supabase, orderId, "dividida", `${nota} → #${hija.numero}`);
+  await registrarEvento(supabase, hija.id, "creada", `Resto de #${padre.numero_pedido}`);
 
   const almacenIds = await userIdsByRole("almacen");
   await notify([...almacenIds, ...(padre.created_by ? [padre.created_by] : [])], {
@@ -557,6 +675,13 @@ export async function completeOrder(
 
   const updated = actual;
 
+  await registrarEvento(
+    supabase,
+    orderId,
+    parcial ? "parcial" : "completada",
+    parcial ? notaFaltante : null
+  );
+
   if (updated.created_by) {
     await notify([updated.created_by], {
       tipo: parcial ? "orden_parcial" : "orden_completada",
@@ -632,6 +757,8 @@ export async function eliminarAdjunto(formData: FormData): Promise<void> {
     const path = url.slice(idx + marker.length).split("?")[0];
     await supabase.storage.from("ordenes").remove([path]);
   }
+
+  await registrarEvento(supabase, orderId, "adjunto_eliminado");
 
   revalidatePath(`/ordenes/${orderId}`);
   revalidatePath("/ordenes");
