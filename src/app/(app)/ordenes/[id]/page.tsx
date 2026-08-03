@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
 import { ImageGallery } from "@/components/image-gallery";
-import { deleteOrder } from "../actions";
+import { EliminarOrdenButton } from "./eliminar-orden";
 import { ModalidadForm } from "./modalidad-form";
 import { AsignarForm } from "./asignar-form";
 import { AlmacenOverrideCompletar } from "./almacen-override";
@@ -53,6 +53,7 @@ export default async function OrdenDetallePage({
     : order.guia_url
       ? [order.guia_url]
       : [];
+  const imagenesMaterial = order.material_urls ?? [];
 
   const canAssign = profile.role === "admin" || profile.role === "almacen";
   const isMine = order.assigned_to === userId;
@@ -328,10 +329,15 @@ export default async function OrdenDetallePage({
       {!esRecojoPorConfirmar && canComplete && (isRepartidor ? order.assigned_to : true) && (
         almacenReparto && !estaEnTransito ? (
           <AlmacenOverrideCompletar repartidorNombre={order.repartidor?.full_name ?? "el repartidor asignado"}>
-            <CompletarForm orderId={order.id} tipo={order.tipo} />
+            <CompletarForm orderId={order.id} tipo={order.tipo} numeroGuiaActual={order.numero_guia} />
           </AlmacenOverrideCompletar>
         ) : (
-          <CompletarForm orderId={order.id} tipo={order.tipo} verificando={estaEnTransito} />
+          <CompletarForm
+            orderId={order.id}
+            tipo={order.tipo}
+            verificando={estaEnTransito}
+            numeroGuiaActual={order.numero_guia}
+          />
         )
       )}
 
@@ -344,25 +350,28 @@ export default async function OrdenDetallePage({
       {/* Guía (cuando ya se completó) */}
       {imagenesGuia.length > 0 && (
         <div>
-          <h2 className="mb-1 text-sm font-medium text-gray-500">
+          <h2 className="mb-1 flex items-baseline gap-2 text-sm font-medium text-gray-500">
             Guía {imagenesGuia.length > 1 && `(${imagenesGuia.length} fotos)`}
+            {order.numero_guia && (
+              <span className="font-semibold text-gray-700">N° {order.numero_guia}</span>
+            )}
           </h2>
           <ImageGallery urls={imagenesGuia} alt="Foto de la guía" />
         </div>
       )}
 
-      {/* Eliminar (admin) */}
-      {profile.role === "admin" && (
-        <form action={deleteOrder}>
-          <input type="hidden" name="order_id" value={order.id} />
-          <button
-            type="submit"
-            className="text-sm text-gray-400 underline hover:text-brand"
-          >
-            Eliminar orden
-          </button>
-        </form>
+      {/* Material (fotos opcionales del bulto/producto, aparte de la guía) */}
+      {imagenesMaterial.length > 0 && (
+        <div>
+          <h2 className="mb-1 text-sm font-medium text-gray-500">
+            Material {imagenesMaterial.length > 1 && `(${imagenesMaterial.length} fotos)`}
+          </h2>
+          <ImageGallery urls={imagenesMaterial} alt="Foto del material" />
+        </div>
       )}
+
+      {/* Eliminar (admin) */}
+      {profile.role === "admin" && <EliminarOrdenButton orderId={order.id} />}
     </div>
   );
 }

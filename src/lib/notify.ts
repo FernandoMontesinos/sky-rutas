@@ -1,5 +1,6 @@
 import webpush from "web-push";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { UserRole } from "@/lib/types";
 
 const vapidReady =
@@ -21,19 +22,21 @@ export type NotifTipo =
   | "orden_completada"
   | "orden_parcial";
 
-type Supabase = Awaited<ReturnType<typeof createClient>>;
+type PushSub = { id: string; user_id: string; endpoint: string; p256dh: string; auth_key: string };
 
 async function sendPushToUser(
-  supabase: Supabase,
-  userId: string,
+  subs: PushSub[],
   payload: { title: string; body: string; url: string }
 ) {
-  if (!vapidReady) return;
-  const { data: subs } = await supabase
-    .from("push_subscriptions")
-    .select("id, endpoint, p256dh, auth_key")
-    .eq("user_id", userId);
-  if (!subs || subs.length === 0) return;
+  if (!vapidReady || subs.length === 0) return;
+
+  // El borrado de una suscripción vencida se hace con service_role: casi
+  // siempre se notifica a OTRA persona (vendedor crea -> avisa a almacén,
+  // etc.), así que con el cliente de sesión del actor la policy
+  // push_subscriptions_delete (user_id = auth.uid()) nunca matchea la fila
+  // del destinatario — el delete "funciona" (0 filas, sin error) pero la
+  // suscripción muerta queda para siempre y se reintenta en cada push.
+  const admin = createAdminClient();
 
   const body = JSON.stringify(payload);
   await Promise.all(
@@ -52,7 +55,9 @@ async function sendPushToUser(
         // Suscripción vencida o inválida (celular desinstaló, permiso revocado, etc.)
         const statusCode = (err as { statusCode?: number }).statusCode;
         if (statusCode === 404 || statusCode === 410) {
-          await supabase.from("push_subscriptions").delete().eq("id", s.id);
+          await admin.from("push_subscriptions").delete().eq("id", s.id);
+        } else {
+          console.error("[notify] fallo de push no manejado", { statusCode, userId: s.user_id });
         }
       }
     })
@@ -96,9 +101,16 @@ export async function notify(
     });
   }
 
-  await Promise.all(
-    unicos.map((id) => sendPushToUser(supabase, id, { title: opts.titulo, body: opts.mensaje, url }))
-  );
+  if (vapidReady) {
+    // Una sola consulta para todos los destinatarios en vez de una por
+    // usuario: notify() ya recibe la lista completa, así que N+1 acá era
+    // innecesario — el mismo payload se manda a todas las suscripciones.
+    const { data: subs } = await supabase
+      .from("push_subscriptions")
+      .select("id, user_id, endpoint, p256dh, auth_key")
+      .in("user_id", unicos);
+    await sendPushToUser((subs ?? []) as PushSub[], { title: opts.titulo, body: opts.mensaje, url });
+  }
 }
 
 /** Ids de usuarios activos con el rol dado (para notificar a "todo almacén", etc.). */

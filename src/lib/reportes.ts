@@ -135,16 +135,22 @@ export function filtrosAQuery(f: ReporteFiltros) {
   return p.toString();
 }
 
-/** Consulta de órdenes ya filtrada y ordenada (más reciente primero). */
+/**
+ * Consulta de órdenes ya filtrada y ordenada (más reciente primero).
+ * `select` es sobreescribible para reusar los mismos filtros con otras
+ * columnas (ej. /api/export-guias necesita guia_url/numero_guia, no las
+ * columnas del Excel) sin duplicar la lógica de filtros en dos lugares.
+ */
 export function construirConsulta(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  f: ReporteFiltros
+  f: ReporteFiltros,
+  select: string = SELECT_REPORTE
 ) {
   const campo = campoFecha(f.eje);
 
   let query = supabase
     .from("orders")
-    .select(SELECT_REPORTE)
+    .select(select)
     .gte(campo, `${f.desde}T00:00:00${OFFSET_LIMA}`)
     .lte(campo, `${f.hasta}T23:59:59${OFFSET_LIMA}`);
 

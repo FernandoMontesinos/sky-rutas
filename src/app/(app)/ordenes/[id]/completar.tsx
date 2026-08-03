@@ -20,6 +20,8 @@ import { TYPE_LABEL, type OrderType } from "@/lib/types";
 export function RecojoForm({ orderId }: { orderId: string }) {
   const [state, action, pending] = useActionState<FormResult, FormData>(marcarEnTransito, {});
   const [images, setImages] = useState<PickedImage[]>([]);
+  const [materialImages, setMaterialImages] = useState<PickedImage[]>([]);
+  const [numeroGuia, setNumeroGuia] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
   function confirmar() {
@@ -27,10 +29,16 @@ export function RecojoForm({ orderId }: { orderId: string }) {
       setLocalError("Primero toma la foto de la guía.");
       return;
     }
+    if (numeroGuia.trim().length === 0) {
+      setLocalError("Escribe el número de guía (está impreso en el documento).");
+      return;
+    }
     setLocalError(null);
     const fd = new FormData();
     fd.set("order_id", orderId);
+    fd.set("numero_guia", numeroGuia.trim());
     images.forEach((img) => fd.append("guias", img.file));
+    materialImages.forEach((img) => fd.append("material", img.file));
     startTransition(() => action(fd));
   }
 
@@ -44,6 +52,26 @@ export function RecojoForm({ orderId }: { orderId: string }) {
       </h2>
 
       <MultiImagePicker label="" images={images} onChange={setImages} />
+
+      <div>
+        <label htmlFor="numero_guia_recojo" className="mb-1 block text-xs font-medium text-gray-700">
+          N° de guía (el que está impreso en el documento)
+        </label>
+        <input
+          id="numero_guia_recojo"
+          value={numeroGuia}
+          onChange={(e) => setNumeroGuia(e.target.value)}
+          placeholder="Ej. T002-0001"
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-600/30"
+        />
+      </div>
+
+      <div>
+        <span className="mb-1 block text-xs font-medium text-gray-700">
+          Foto(s) del material (opcional)
+        </span>
+        <MultiImagePicker label="" images={materialImages} onChange={setMaterialImages} />
+      </div>
 
       {errorMsg && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-dark">{errorMsg}</p>
@@ -142,18 +170,24 @@ export default function CompletarForm({
   orderId,
   tipo,
   verificando = false,
+  numeroGuiaActual,
 }: {
   orderId: string;
   tipo: OrderType;
   /** La orden ya venía "En Tránsito": la guía se subió al recoger, así que
    *  acá la foto es opcional y el texto habla de verificar, no de entregar. */
   verificando?: boolean;
+  /** Si ya se escribió el número de guía en el paso de recojo, acá es
+   *  editable por si hay que corregirlo, pero no obligatorio de nuevo. */
+  numeroGuiaActual?: string | null;
 }) {
   const [state, action, pending] = useActionState<FormResult, FormData>(
     completeOrder,
     {}
   );
   const [images, setImages] = useState<PickedImage[]>([]);
+  const [materialImages, setMaterialImages] = useState<PickedImage[]>([]);
+  const [numeroGuia, setNumeroGuia] = useState(numeroGuiaActual ?? "");
   const [parcial, setParcial] = useState(false);
   const [faltante, setFaltante] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
@@ -161,6 +195,10 @@ export default function CompletarForm({
   function confirmar() {
     if (!verificando && images.length === 0) {
       setLocalError("Primero toma la foto de la guía.");
+      return;
+    }
+    if (!numeroGuiaActual && numeroGuia.trim().length === 0) {
+      setLocalError("Escribe el número de guía (está impreso en el documento).");
       return;
     }
     if (parcial && faltante.trim().length === 0) {
@@ -172,7 +210,9 @@ export default function CompletarForm({
     fd.set("order_id", orderId);
     fd.set("entrega_parcial", String(parcial));
     fd.set("nota_faltante", faltante.trim());
+    fd.set("numero_guia", numeroGuia.trim());
     images.forEach((img) => fd.append("guias", img.file));
+    materialImages.forEach((img) => fd.append("material", img.file));
     startTransition(() => action(fd));
   }
 
@@ -189,6 +229,27 @@ export default function CompletarForm({
       </h2>
 
       <MultiImagePicker label="" images={images} onChange={setImages} />
+
+      <div>
+        <label htmlFor="numero_guia_completar" className="mb-1 block text-xs font-medium text-gray-700">
+          N° de guía (el que está impreso en el documento)
+          {numeroGuiaActual && " — ya registrado, corrígelo si hace falta"}
+        </label>
+        <input
+          id="numero_guia_completar"
+          value={numeroGuia}
+          onChange={(e) => setNumeroGuia(e.target.value)}
+          placeholder="Ej. T002-0001"
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+        />
+      </div>
+
+      <div>
+        <span className="mb-1 block text-xs font-medium text-gray-700">
+          Foto(s) del material (opcional)
+        </span>
+        <MultiImagePicker label="" images={materialImages} onChange={setMaterialImages} />
+      </div>
 
       <div>
         <span className="mb-1.5 block text-sm font-medium text-gray-700">

@@ -28,6 +28,10 @@ export type Order = {
   guia_url: string | null;
   imagenes_urls: string[];
   guias_urls: string[];
+  /** Número de guía de remisión, escrito a mano (formato SUNAT, ej. "T002-0001"). */
+  numero_guia: string | null;
+  /** Fotos opcionales del material/bultos, aparte de la guía en sí. */
+  material_urls: string[];
   entrega_parcial: boolean;
   /** Intentos fallidos de recojo: el proveedor no tenía el material listo. */
   no_recogido_intentos: number;

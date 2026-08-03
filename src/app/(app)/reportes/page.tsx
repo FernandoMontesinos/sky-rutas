@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, Search } from "lucide-react";
+import { Download, FileArchive, Search } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge, TypeBadge } from "@/components/badges";
@@ -195,8 +195,16 @@ export default async function ReportesPage({
           </Link>
 
           <a
+            href={`/api/export-guias?${filtrosAQuery(filtros)}`}
+            className="flex items-center gap-1.5 rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-800 sm:ml-auto"
+          >
+            <FileArchive className="h-4 w-4" strokeWidth={2.25} />
+            Descargar guías (ZIP)
+          </a>
+
+          <a
             href={`/api/export?${filtrosAQuery(filtros)}`}
-            className="flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 sm:ml-auto"
+            className="flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700"
           >
             <Download className="h-4 w-4" strokeWidth={2.25} />
             Exportar a Excel

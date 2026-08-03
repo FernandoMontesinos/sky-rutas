@@ -189,6 +189,15 @@ export async function createOrder(
   const imagenes = formData.getAll("imagenes").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!numero) return { error: "Ingresa el número de pedido." };
+  // El sufijo -R#/-E# identifica una orden hija generada por el sistema
+  // (remanente o envío dividido). Si se permitiera tipearlo a mano, dos
+  // números iguales (uno real, uno tipeado) podrían chocar más adelante
+  // con el que arma siguienteNumeroDivision() para esa misma familia.
+  const SUFIJO_DIVISION = new RegExp(`-(${Object.values(DIVISION_SUFIJO).join("|")})\\d+$`, "i");
+  if (SUFIJO_DIVISION.test(numero))
+    return {
+      error: `El número no puede terminar en "-${numero.match(SUFIJO_DIVISION)?.[1]?.toUpperCase()}#": ese sufijo lo asigna el sistema al dividir un envío.`,
+    };
   if (tipo !== "entrega" && tipo !== "recojo")
     return { error: "Selecciona si es CLIENTE o PROVEEDOR." };
   if (!["reparto", "oficina", "courier"].includes(modalidad))
@@ -207,7 +216,7 @@ export async function createOrder(
   const { data: existente } = await supabase
     .from("orders")
     .select("id")
-    .ilike("numero_pedido", numero)
+    .ilike("numero_pedido", escaparLike(numero))
     .maybeSingle();
   if (existente) {
     return { error: `Ya existe un pedido con el número "${numero}". Revisa que no sea un duplicado.` };
@@ -341,21 +350,44 @@ export async function marcarEnTransito(
   await requireRole(["repartidor", "almacen", "admin"]);
 
   const orderId = String(formData.get("order_id") ?? "");
+  const numeroGuia = String(formData.get("numero_guia") ?? "").trim();
   const guias = formData.getAll("guias").filter((f): f is File => f instanceof File && f.size > 0);
+  const material = formData.getAll("material").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!orderId) return { error: "Orden inválida." };
   if (guias.length === 0)
     return { error: "Toma al menos una foto de la guía antes de confirmar." };
+  if (!numeroGuia) return { error: "Ingresa el número de guía (escrito a mano)." };
 
   const supabase = await createClient();
+
+  // La misma carrera que ya se blindó en completeOrder/dividirEnvio: sin
+  // este chequeo, un reintento de red tardío (o una pestaña vieja) podía
+  // reescribir a "en_transito" una orden que almacén ya había cerrado.
+  const { data: actual } = await supabase
+    .from("orders")
+    .select("estado")
+    .eq("id", orderId)
+    .single();
+  if (!actual) return { error: "Orden inválida." };
+  if (actual.estado !== "asignado")
+    return { error: "Esta orden ya no está asignada; recarga la página para ver su estado actual." };
+
   const { urls, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
   if (upErr) return { error: "No se pudo subir la foto: " + upErr };
+  const { urls: materialUrls, error: matErr } =
+    material.length > 0
+      ? await uploadMany(supabase, "guias", `${orderId}/material`, material)
+      : { urls: [] as string[], error: undefined };
+  if (matErr) return { error: "No se pudo subir la foto del material: " + matErr };
 
   const { data: updated, error } = await supabase
     .from("orders")
     .update({
       guia_url: urls[0] ?? null,
       guias_urls: urls,
+      numero_guia: numeroGuia,
+      material_urls: materialUrls,
       estado: "en_transito",
       en_transito_at: new Date().toISOString(),
     })
@@ -610,7 +642,9 @@ export async function completeOrder(
   const orderId = String(formData.get("order_id") ?? "");
   const parcial = String(formData.get("entrega_parcial") ?? "") === "true";
   const notaFaltante = String(formData.get("nota_faltante") ?? "").trim();
+  const numeroGuiaInput = String(formData.get("numero_guia") ?? "").trim();
   const guias = formData.getAll("guias").filter((f): f is File => f instanceof File && f.size > 0);
+  const material = formData.getAll("material").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!orderId) return { error: "Orden inválida." };
   if (parcial && !notaFaltante)
@@ -620,7 +654,7 @@ export async function completeOrder(
 
   const { data: actual } = await supabase
     .from("orders")
-    .select("id, estado, guias_urls, guia_url, numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, tipo, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by")
+    .select("id, estado, guias_urls, guia_url, numero_guia, material_urls, numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, tipo, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by")
     .eq("id", orderId)
     .single();
   if (!actual) return { error: "Orden inválida." };
@@ -636,11 +670,29 @@ export async function completeOrder(
   if (guias.length === 0 && guiasPrevias.length === 0)
     return { error: "Toma al menos una foto de la guía antes de confirmar." };
 
+  // El número de guía se pide una sola vez: si ya se escribió en el paso de
+  // recojo (marcarEnTransito), acá es opcional (solo se usa para corregirlo).
+  // Si esta orden nunca pasó por ese paso (entrega directa), sí es obligatorio.
+  const numeroGuia = numeroGuiaInput || actual.numero_guia;
+  if (!numeroGuia) return { error: "Ingresa el número de guía (escrito a mano)." };
+
   let urls = guiasPrevias;
   if (guias.length > 0) {
     const { urls: nuevas, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
     if (upErr) return { error: "No se pudo subir la foto: " + upErr };
     urls = [...guiasPrevias, ...nuevas];
+  }
+
+  let materialUrls = actual.material_urls ?? [];
+  if (material.length > 0) {
+    const { urls: nuevasMaterial, error: matErr } = await uploadMany(
+      supabase,
+      "guias",
+      `${orderId}/material`,
+      material
+    );
+    if (matErr) return { error: "No se pudo subir la foto del material: " + matErr };
+    materialUrls = [...materialUrls, ...nuevasMaterial];
   }
 
   // Backorder: si quedó parcial, se crea un pedido nuevo solo por lo que falta
@@ -666,6 +718,8 @@ export async function completeOrder(
     .update({
       guia_url: urls[0] ?? null,
       guias_urls: urls,
+      numero_guia: numeroGuia,
+      material_urls: materialUrls,
       entrega_parcial: parcial,
       estado: "completado",
       completed_at: new Date().toISOString(),
@@ -709,13 +763,27 @@ export async function completeOrder(
   redirect("/ordenes");
 }
 
-/** Admin elimina una orden. */
-export async function deleteOrder(formData: FormData): Promise<void> {
+/** Admin elimina una orden. Bloqueada si tiene hijas (remanente o envío
+ *  dividido): borrarla dejaría esos enlaces cruzados apuntando a un id
+ *  inexistente y el hilo de la familia (padre/hijas) se pierde. */
+export async function deleteOrder(_prev: FormResult, formData: FormData): Promise<FormResult> {
   await requireRole(["admin"]);
   const orderId = String(formData.get("order_id") ?? "");
-  if (!orderId) return;
+  if (!orderId) return { error: "Orden inválida." };
 
   const supabase = await createClient();
+
+  const { data: hijos } = await supabase
+    .from("orders")
+    .select("id")
+    .eq("parent_order_id", orderId)
+    .limit(1);
+  if (hijos && hijos.length > 0) {
+    return {
+      error: "Esta orden tiene una división (remanente o envío) enlazada; no se puede eliminar.",
+    };
+  }
+
   await supabase.from("orders").delete().eq("id", orderId);
 
   revalidatePath("/ordenes");
@@ -751,11 +819,24 @@ export async function eliminarAdjunto(formData: FormData): Promise<void> {
   // Borrar el archivo real del storage es "mejor esfuerzo": si falla (ya
   // no existe, o la URL no calza con el patrón esperado) no bloqueamos
   // la operación — lo importante es que ya no aparezca en la orden.
+  //
+  // crearOrdenHija() copia imagen_url/imagenes_urls del padre a la hija, así
+  // que la misma URL de storage puede estar referenciada por más de una
+  // orden. Antes de borrar el archivo físico hay que confirmar que ninguna
+  // OTRA orden la sigue usando — si no, una división borraría en cascada la
+  // foto que el padre (o una hija hermana) todavía necesita mostrar.
   const marker = "/object/public/ordenes/";
   const idx = url.indexOf(marker);
   if (idx !== -1) {
-    const path = url.slice(idx + marker.length).split("?")[0];
-    await supabase.storage.from("ordenes").remove([path]);
+    const [{ data: porUnica }, { data: porArreglo }] = await Promise.all([
+      supabase.from("orders").select("id").neq("id", orderId).eq("imagen_url", url).limit(1),
+      supabase.from("orders").select("id").neq("id", orderId).contains("imagenes_urls", [url]).limit(1),
+    ]);
+    const compartida = (porUnica?.length ?? 0) > 0 || (porArreglo?.length ?? 0) > 0;
+    if (!compartida) {
+      const path = url.slice(idx + marker.length).split("?")[0];
+      await supabase.storage.from("ordenes").remove([path]);
+    }
   }
 
   await registrarEvento(supabase, orderId, "adjunto_eliminado");
