@@ -489,13 +489,18 @@ const CAMPOS_EDITABLES = [
  * mientras siga Pendiente: una vez que almacén la tomó, los datos ya se usaron
  * para despachar.
  *
+ * Almacén NO entra acá a propósito: estos son datos de la venta (cliente,
+ * proyecto, proveedor de compra), no del despacho. Si almacén ve algo mal, lo
+ * corrige Ventas — así el dato tiene un solo dueño y el historial no mezcla
+ * quién decide qué.
+ *
  * Cada campo que realmente cambió queda en el historial con su valor anterior.
  */
 export async function editarOrden(
   _prev: FormResult,
   formData: FormData
 ): Promise<FormResult> {
-  const { userId } = await requireRole(["vendedor", "admin", "almacen"]);
+  const { userId } = await requireRole(["vendedor", "admin"]);
 
   const orderId = String(formData.get("order_id") ?? "");
   if (!orderId) return { error: "Orden inválida." };
@@ -763,15 +768,37 @@ export async function completeOrder(
   redirect("/ordenes");
 }
 
-/** Admin elimina una orden. Bloqueada si tiene hijas (remanente o envío
- *  dividido): borrarla dejaría esos enlaces cruzados apuntando a un id
- *  inexistente y el hilo de la familia (padre/hijas) se pierde. */
+/**
+ * Elimina una orden. Solo Ventas y Admin: el resto de roles (almacén,
+ * repartidor) trabajan sobre la orden pero no son dueños del registro, así que
+ * no tienen por qué borrarlo.
+ *
+ * Ventas solo puede borrar mientras la orden siga Pendiente — igual que para
+ * corregirla. Una vez que almacén la tomó ya hay trabajo hecho encima
+ * (asignación, guías, historial) y borrarla se lo lleva puesto; a partir de
+ * ahí solo Admin. Bloqueada también si tiene hijas (remanente o envío
+ * dividido): borrarla dejaría esos enlaces cruzados apuntando a un id
+ * inexistente y el hilo de la familia se pierde.
+ */
 export async function deleteOrder(_prev: FormResult, formData: FormData): Promise<FormResult> {
-  await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "vendedor"]);
   const orderId = String(formData.get("order_id") ?? "");
   if (!orderId) return { error: "Orden inválida." };
 
   const supabase = await createClient();
+
+  const { data: actual } = await supabase
+    .from("orders")
+    .select("estado")
+    .eq("id", orderId)
+    .single();
+  if (!actual) return { error: "Orden inválida." };
+
+  if (profile.role === "vendedor" && actual.estado !== "pendiente") {
+    return {
+      error: "Esta orden ya está en curso; para eliminarla ahora habla con un administrador.",
+    };
+  }
 
   const { data: hijos } = await supabase
     .from("orders")
@@ -784,7 +811,17 @@ export async function deleteOrder(_prev: FormResult, formData: FormData): Promis
     };
   }
 
-  await supabase.from("orders").delete().eq("id", orderId);
+  // `.select()` para detectar el caso en que RLS descarte la fila: PostgREST
+  // devuelve cero filas SIN error, y la acción reportaría un borrado que
+  // nunca ocurrió.
+  const { data: borrada, error } = await supabase
+    .from("orders")
+    .delete()
+    .eq("id", orderId)
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!borrada) return { error: "No tienes permiso para eliminar esta orden." };
 
   revalidatePath("/ordenes");
   redirect("/ordenes");

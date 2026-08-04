@@ -111,9 +111,16 @@ export default async function OrdenDetallePage({
 
   // Ventas corrige datos solo mientras nadie la haya tomado: después ya se
   // usaron para despachar. Cualquier vendedor puede, no solo quien la creó.
+  // Almacén queda fuera: estos son datos de la venta, no del despacho — si ve
+  // algo mal, lo corrige Ventas (ver editarOrden en actions.ts).
   const puedeEditar =
     order.estado === "pendiente" &&
-    (profile.role === "vendedor" || profile.role === "admin" || isAlmacen);
+    (profile.role === "vendedor" || profile.role === "admin");
+
+  // Eliminar: Ventas solo mientras siga pendiente, Admin siempre.
+  const puedeEliminar =
+    profile.role === "admin" ||
+    (profile.role === "vendedor" && order.estado === "pendiente");
 
   let repartidores: Profile[] = [];
   if (canAssign) {
@@ -370,8 +377,8 @@ export default async function OrdenDetallePage({
         </div>
       )}
 
-      {/* Eliminar (admin) */}
-      {profile.role === "admin" && <EliminarOrdenButton orderId={order.id} />}
+      {/* Eliminar (Ventas mientras esté pendiente, Admin siempre) */}
+      {puedeEliminar && <EliminarOrdenButton orderId={order.id} />}
     </div>
   );
 }

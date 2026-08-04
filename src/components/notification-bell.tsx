@@ -103,7 +103,14 @@ export function NotificationBell({ userId }: { userId: string }) {
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-40 mt-2 w-80 max-w-[90vw] rounded-xl border border-gray-200 bg-white shadow-lg">
+          {/*
+            En celular el panel va fijo al ancho de la pantalla (con un margen
+            a cada lado) en vez de colgar de la campanita: anclado a la derecha
+            del botón, sus 320px se salían por el borde IZQUIERDO —la campanita
+            está a ~230px del borde en un celular angosto— y el texto quedaba
+            cortado. De sm en adelante sigue siendo el desplegable de antes.
+          */}
+          <div className="fixed inset-x-2 top-16 z-40 rounded-xl border border-gray-200 bg-white shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80">
             <div className="border-b border-gray-100 px-3 py-2 text-sm font-semibold text-gray-700">
               Notificaciones
             </div>

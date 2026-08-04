@@ -43,6 +43,9 @@ function isoHaceDias(dias: number) {
 
 type RangoCompletadas = "hoy" | "semana" | "mes";
 
+/** Etapa del día del repartidor: una pestaña por cada una (ver el layout). */
+type PanelRepartidor = "por-hacer" | "recogidas" | "completadas";
+
 const RANGO_LABEL: Record<RangoCompletadas, string> = {
   hoy: "Hoy",
   semana: "Últimos 7 días",
@@ -346,6 +349,7 @@ export default async function OrdenesPage({
 }: {
   searchParams: Promise<{
     vista?: string;
+    panel?: string;
     formato?: string;
     densidad?: string;
     rango?: string;
@@ -361,10 +365,18 @@ export default async function OrdenesPage({
   const supabase = await createClient();
   const isRepartidor = profile.role === "repartidor";
   const verTodas = isRepartidor && sp.vista === "todas";
-  const formato = sp.formato === "tabla" ? "tabla" : "kanban";
+  // Etapa que mira el repartidor en "Mi ruta". Cada una es una pestaña de la
+  // barra inferior (ver NAV_REPARTIDOR en el layout): en la calle necesita
+  // saber qué le queda por hacer sin scrollear tres columnas apiladas.
+  const panel: PanelRepartidor =
+    sp.panel === "recogidas" || sp.panel === "completadas" ? sp.panel : "por-hacer";
+  const rutaPropia = isRepartidor && !verTodas;
+  const formato = !rutaPropia && sp.formato === "tabla" ? "tabla" : "kanban";
   // Compacto por defecto: es la vista pensada para decidir de un vistazo;
-  // detallado es la que ya existía, con imagen/modalidad/creador.
-  const detallado = sp.densidad === "detallada";
+  // detallado es la que ya existía, con imagen/modalidad/creador. El
+  // repartidor va siempre en detallada: en la calle la miniatura y el motivo
+  // del fallo anterior le sirven, y una densidad menos que elegir también.
+  const detallado = rutaPropia || sp.densidad === "detallada";
   const rango: RangoCompletadas =
     sp.rango === "semana" || sp.rango === "mes" ? sp.rango : "hoy";
 
@@ -385,8 +397,10 @@ export default async function OrdenesPage({
   function href(cambios: Record<string, string | undefined> = {}) {
     const actual: Record<string, string | undefined> = {
       vista: verTodas ? "todas" : undefined,
+      panel: panel !== "por-hacer" ? panel : undefined,
       formato: formato === "tabla" ? "tabla" : undefined,
-      densidad: detallado ? "detallada" : undefined,
+      // En "Mi ruta" la densidad es fija, así que no se arrastra en la URL.
+      densidad: !rutaPropia && detallado ? "detallada" : undefined,
       rango: rango !== "hoy" ? rango : undefined,
       q: q || undefined,
       repartidor: fRepartidor || undefined,
@@ -510,29 +524,33 @@ export default async function OrdenesPage({
             </div>
           )}
 
-          <div className="inline-flex rounded-xl bg-gray-100 p-1">
-            <Link
-              href={href({ formato: undefined })}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
-                formato === "kanban" ? "bg-white text-brand shadow-sm" : "text-gray-500"
-              }`}
-            >
-              <LayoutGrid className="h-4 w-4" strokeWidth={2.25} />
-              Kanban
-            </Link>
-            <Link
-              href={href({ formato: "tabla" })}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
-                formato === "tabla" ? "bg-white text-brand shadow-sm" : "text-gray-500"
-              }`}
-            >
-              <Table2 className="h-4 w-4" strokeWidth={2.25} />
-              Tabla
-            </Link>
-          </div>
+          {/* Kanban/Tabla y Compacta/Detallada son controles de gestión: en
+              "Mi ruta" solo estorban en una pantalla de celular. */}
+          {!rutaPropia && (
+            <div className="inline-flex rounded-xl bg-gray-100 p-1">
+              <Link
+                href={href({ formato: undefined })}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                  formato === "kanban" ? "bg-white text-brand shadow-sm" : "text-gray-500"
+                }`}
+              >
+                <LayoutGrid className="h-4 w-4" strokeWidth={2.25} />
+                Kanban
+              </Link>
+              <Link
+                href={href({ formato: "tabla" })}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
+                  formato === "tabla" ? "bg-white text-brand shadow-sm" : "text-gray-500"
+                }`}
+              >
+                <Table2 className="h-4 w-4" strokeWidth={2.25} />
+                Tabla
+              </Link>
+            </div>
+          )}
         </div>
 
-        {formato === "kanban" && (
+        {formato === "kanban" && !rutaPropia && (
           <div className="inline-flex rounded-xl bg-gray-100 p-1">
             <Link
               href={href({ densidad: undefined })}
@@ -556,22 +574,26 @@ export default async function OrdenesPage({
         )}
       </div>
 
-      <div className="flex items-center gap-2 text-sm">
-        <span className="text-gray-500">Completadas:</span>
-        <div className="inline-flex rounded-xl bg-gray-100 p-1">
-          {(["hoy", "semana", "mes"] as RangoCompletadas[]).map((r) => (
-            <Link
-              key={r}
-              href={href({ rango: r === "hoy" ? undefined : r })}
-              className={`rounded-lg px-3 py-1 font-semibold transition ${
-                rango === r ? "bg-white text-brand shadow-sm" : "text-gray-500"
-              }`}
-            >
-              {RANGO_LABEL[r]}
-            </Link>
-          ))}
+      {/* El rango solo aplica a las completadas: en "Mi ruta" se muestra
+          únicamente cuando el repartidor está parado en esa pestaña. */}
+      {(!rutaPropia || panel === "completadas") && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-gray-500">Completadas:</span>
+          <div className="inline-flex rounded-xl bg-gray-100 p-1">
+            {(["hoy", "semana", "mes"] as RangoCompletadas[]).map((r) => (
+              <Link
+                key={r}
+                href={href({ rango: r === "hoy" ? undefined : r })}
+                className={`rounded-lg px-3 py-1 font-semibold transition ${
+                  rango === r ? "bg-white text-brand shadow-sm" : "text-gray-500"
+                }`}
+              >
+                {RANGO_LABEL[r]}
+              </Link>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/*
         Buscador y filtros como form GET: el estado vive en la URL (enlace
@@ -581,8 +603,9 @@ export default async function OrdenesPage({
       */}
       <form method="get" className="flex flex-wrap items-end gap-2">
         {verTodas && <input type="hidden" name="vista" value="todas" />}
+        {panel !== "por-hacer" && <input type="hidden" name="panel" value={panel} />}
         {formato === "tabla" && <input type="hidden" name="formato" value="tabla" />}
-        {detallado && <input type="hidden" name="densidad" value="detallada" />}
+        {!rutaPropia && detallado && <input type="hidden" name="densidad" value="detallada" />}
         {rango !== "hoy" && <input type="hidden" name="rango" value={rango} />}
 
         {/* Sin id: este bloque se renderiza dos veces (móvil y escritorio) y
@@ -597,7 +620,11 @@ export default async function OrdenesPage({
               name="q"
               aria-label="Buscar órdenes"
               defaultValue={q}
-              placeholder="N° de orden, cliente/proveedor o quién la creó"
+              placeholder={
+                rutaPropia
+                  ? "Buscar por N° o cliente"
+                  : "N° de orden, cliente/proveedor o quién la creó"
+              }
               className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
             />
           </div>
@@ -635,30 +662,37 @@ export default async function OrdenesPage({
           </>
         )}
 
-        <select
-          name="modalidad"
-          defaultValue={fModalidad}
-          aria-label="Filtrar por modalidad"
-          className="rounded-lg border border-gray-300 px-2 py-2 text-sm outline-none focus:border-brand"
-        >
-          <option value="">Modalidad: todas</option>
-          {MODALIDADES.map((m) => (
-            <option key={m} value={m}>
-              {modalidadLabel(m, "entrega")}
-            </option>
-          ))}
-        </select>
+        {/* Modalidad y "con problema" son filtros de gestión. Al repartidor
+            le llegan sus órdenes ya asignadas: lo único que necesita en la
+            calle es encontrar una por nombre o número. */}
+        {!rutaPropia && (
+          <>
+            <select
+              name="modalidad"
+              defaultValue={fModalidad}
+              aria-label="Filtrar por modalidad"
+              className="rounded-lg border border-gray-300 px-2 py-2 text-sm outline-none focus:border-brand"
+            >
+              <option value="">Modalidad: todas</option>
+              {MODALIDADES.map((m) => (
+                <option key={m} value={m}>
+                  {modalidadLabel(m, "entrega")}
+                </option>
+              ))}
+            </select>
 
-        <label className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700">
-          <input
-            type="checkbox"
-            name="problema"
-            value="1"
-            defaultChecked={soloProblema}
-            className="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand"
-          />
-          Con problema
-        </label>
+            <label className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700">
+              <input
+                type="checkbox"
+                name="problema"
+                value="1"
+                defaultChecked={soloProblema}
+                className="h-4 w-4 rounded border-gray-300 text-brand focus:ring-brand"
+              />
+              Con problema
+            </label>
+          </>
+        )}
 
         <button
           type="submit"
@@ -766,32 +800,43 @@ export default async function OrdenesPage({
           </section>
         </div>
       ) : (
-        /* Repartidor viendo solo lo suyo: columnas apiladas en móvil, sin scroll lateral */
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Column
-            title="Por hacer"
-            color="bg-amber-500"
-            orders={byEstado("asignado")}
-            detallado={detallado}
-            fullWidthMobile
-          />
+        /*
+          Repartidor en "Mi ruta": una sola etapa por pantalla. Antes las tres
+          columnas iban apiladas y en un celular había que scrollear de más
+          para llegar a lo que le queda por hacer; ahora cada una es una
+          pestaña de la barra inferior (ver NAV_REPARTIDOR en el layout).
+        */
+        <div className="sm:max-w-2xl">
+          {panel === "por-hacer" && (
+            <Column
+              title="Por hacer"
+              color="bg-amber-500"
+              orders={byEstado("asignado")}
+              detallado={detallado}
+              fullWidthMobile
+            />
+          )}
           {/* Ya recogidas: salen de "Por hacer" al confirmar el recojo, pero
               siguen visibles porque si el material va directo al cliente es
               el propio repartidor quien la cierra al entregarla. */}
-          <Column
-            title="Recogidas (por cerrar)"
-            color="bg-sky-500"
-            orders={byEstado("en_transito")}
-            detallado={detallado}
-            fullWidthMobile
-          />
-          <Column
-            title={`Completadas · ${RANGO_LABEL[rango]}`}
-            color="bg-green-500"
-            orders={completadasList}
-            detallado={detallado}
-            fullWidthMobile
-          />
+          {panel === "recogidas" && (
+            <Column
+              title="Recogidas (por cerrar)"
+              color="bg-sky-500"
+              orders={byEstado("en_transito")}
+              detallado={detallado}
+              fullWidthMobile
+            />
+          )}
+          {panel === "completadas" && (
+            <Column
+              title={`Completadas · ${RANGO_LABEL[rango]}`}
+              color="bg-green-500"
+              orders={completadasList}
+              detallado={detallado}
+              fullWidthMobile
+            />
+          )}
         </div>
       )}
     </div>

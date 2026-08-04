@@ -61,10 +61,6 @@ export function DividirEnvioForm({ orderId }: { orderId: string }) {
         >
           {pending ? "Dividiendo..." : "Crear la orden del resto"}
         </button>
-        <p className="text-center text-xs text-gray-500">
-          Se puede dividir las veces que haga falta. No cuenta como entrega parcial:
-          esto es un despacho planificado, no una falla.
-        </p>
       </div>
     </details>
   );
