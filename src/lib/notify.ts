@@ -24,19 +24,34 @@ export type NotifTipo =
 
 type PushSub = { id: string; user_id: string; endpoint: string; p256dh: string; auth_key: string };
 
+/**
+ * Borra una suscripción push que el navegador ya rechazó (404/410).
+ *
+ * Necesita service_role: casi siempre se notifica a OTRA persona (vendedor
+ * crea -> avisa a almacén), así que con el cliente de sesión del actor la
+ * policy push_subscriptions_delete (user_id = auth.uid()) nunca matchea la
+ * fila del destinatario — el delete "funciona" (0 filas, sin error) pero la
+ * suscripción muerta queda para siempre.
+ *
+ * Todo va dentro del try a propósito, incluida la construcción del cliente:
+ * createAdminClient() LANZA si falta SUPABASE_SERVICE_ROLE_KEY, y esta
+ * limpieza es de mejor esfuerzo. Sin esta red, una variable de entorno mal
+ * puesta tumbaría notify() entero y con él la acción que lo llamó — o sea,
+ * no se podría ni crear una orden por no poder borrar una suscripción vieja.
+ */
+async function limpiarSuscripcionVencida(id: string) {
+  try {
+    await createAdminClient().from("push_subscriptions").delete().eq("id", id);
+  } catch (err) {
+    console.error("[notify] no se pudo limpiar la suscripción vencida", { id, err });
+  }
+}
+
 async function sendPushToUser(
   subs: PushSub[],
   payload: { title: string; body: string; url: string }
 ) {
   if (!vapidReady || subs.length === 0) return;
-
-  // El borrado de una suscripción vencida se hace con service_role: casi
-  // siempre se notifica a OTRA persona (vendedor crea -> avisa a almacén,
-  // etc.), así que con el cliente de sesión del actor la policy
-  // push_subscriptions_delete (user_id = auth.uid()) nunca matchea la fila
-  // del destinatario — el delete "funciona" (0 filas, sin error) pero la
-  // suscripción muerta queda para siempre y se reintenta en cada push.
-  const admin = createAdminClient();
 
   const body = JSON.stringify(payload);
   await Promise.all(
@@ -55,7 +70,7 @@ async function sendPushToUser(
         // Suscripción vencida o inválida (celular desinstaló, permiso revocado, etc.)
         const statusCode = (err as { statusCode?: number }).statusCode;
         if (statusCode === 404 || statusCode === 410) {
-          await admin.from("push_subscriptions").delete().eq("id", s.id);
+          await limpiarSuscripcionVencida(s.id);
         } else {
           console.error("[notify] fallo de push no manejado", { statusCode, userId: s.user_id });
         }
