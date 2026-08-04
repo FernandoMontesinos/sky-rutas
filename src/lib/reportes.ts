@@ -45,6 +45,7 @@ export type ReporteRow = {
   no_recogido_motivo: string | null;
   parent_order_id: string | null;
   division_tipo: DivisionTipo | null;
+  numero_guia: string | null;
   nota: string | null;
   created_at: string;
   assigned_at: string | null;
@@ -59,7 +60,7 @@ export type ReporteRow = {
 export const SELECT_REPORTE =
   "id, numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, tipo, estado, modalidad, " +
   "courier_tracking, entrega_parcial, no_recogido_intentos, no_recogido_motivo, " +
-  "parent_order_id, division_tipo, nota, created_at, assigned_at, en_transito_at, completed_at, " +
+  "parent_order_id, division_tipo, numero_guia, nota, created_at, assigned_at, en_transito_at, completed_at, " +
   "imagen_url, imagenes_urls, " +
   "creador:profiles!orders_created_by_fkey(full_name), repartidor:profiles!orders_assigned_to_fkey(full_name)";
 

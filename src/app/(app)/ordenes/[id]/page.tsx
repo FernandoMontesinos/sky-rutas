@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { GitBranch } from "lucide-react";
+import { Download, GitBranch } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
@@ -124,6 +124,10 @@ export default async function OrdenDetallePage({
   const puedeEliminar =
     profile.role === "admin" ||
     (profile.role === "vendedor" && order.estado === "pendiente");
+
+  // Mismos roles que el endpoint /api/export-guias, para no ofrecer un botón
+  // que después responde 403.
+  const puedeDescargarGuias = profile.role === "admin" || isAlmacen;
 
   let repartidores: Profile[] = [];
   if (canAssign) {
@@ -366,10 +370,21 @@ export default async function OrdenDetallePage({
       {/* Guía (cuando ya se completó) */}
       {imagenesGuia.length > 0 && (
         <div>
-          <h2 className="mb-1 flex items-baseline gap-2 text-sm font-medium text-gray-500">
+          <h2 className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm font-medium text-gray-500">
             Guía {imagenesGuia.length > 1 && `(${imagenesGuia.length} fotos)`}
             {order.numero_guia && (
               <span className="font-semibold text-gray-700">N° {order.numero_guia}</span>
+            )}
+            {/* Descarga de esta orden sola: para adjuntar a un correo o
+                archivar un caso puntual sin bajar el ZIP del mes entero. */}
+            {puedeDescargarGuias && (
+              <a
+                href={`/api/export-guias?orden=${order.id}`}
+                className="ml-auto inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-600 transition hover:border-brand hover:text-brand"
+              >
+                <Download className="h-3.5 w-3.5" strokeWidth={2.25} />
+                Descargar (ZIP)
+              </a>
             )}
           </h2>
           <ImageGallery urls={imagenesGuia} alt="Foto de la guía" />

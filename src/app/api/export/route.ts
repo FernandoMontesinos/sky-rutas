@@ -34,6 +34,10 @@ const BASE_INICIO: Columna[] = [
  * fallaron — justo el dato que se quiere medir.
  */
 const BASE_FIN: Columna[] = [
+  // El N° de guía es el puente con la descarga de guías: es el nombre de la
+  // carpeta dentro del ZIP, así que desde una fila del Excel se llega a sus
+  // fotos sin tener que adivinar.
+  { header: "N° de guía", width: 16, valor: (r) => r.numero_guia ?? "" },
   { header: "Modalidad", width: 12, valor: (r) => MODALIDAD_SHORT[r.modalidad] },
   { header: "Tracking courier", width: 18, valor: (r) => r.courier_tracking ?? "" },
   { header: "Entrega parcial", width: 14, valor: (r) => (r.entrega_parcial ? "Sí" : "No") },
@@ -80,6 +84,51 @@ const COLUMNAS_PEDIDO: Columna[] = [
   { header: "Motivo del último fallo", width: 40, valor: (r) => r.no_recogido_motivo ?? "" },
 ];
 
+/**
+ * CSV: una sola tabla con todo, porque el formato no admite varias hojas.
+ * Se agrega "Tipo" al inicio para no perder la distinción que en el .xlsx
+ * la da la hoja, y las columnas propias de cada tipo salen vacías donde no
+ * aplican (es el precio de tenerlo en un solo archivo plano).
+ */
+const COLUMNAS_CSV: Columna[] = [
+  {
+    header: "Tipo",
+    width: 14,
+    valor: (r) => (r.tipo === "entrega" ? "Cotización" : "Pedido"),
+  },
+  ...BASE_INICIO,
+  { header: "Proyecto", width: 30, valor: (r) => r.proyecto ?? "" },
+  { header: "Proveedor de compra", width: 24, valor: (r) => r.proveedor ?? "" },
+  { header: "N° pedido de compra", width: 18, valor: (r) => r.numero_pedido_compra ?? "" },
+  ...BASE_FIN,
+  { header: "Fecha de recojo", width: 18, valor: (r) => fechaHoraLima(r.en_transito_at) },
+  {
+    header: "Intentos fallidos",
+    width: 15,
+    valor: (r) => (r.no_recogido_intentos > 0 ? String(r.no_recogido_intentos) : ""),
+  },
+  { header: "Motivo del último fallo", width: 40, valor: (r) => r.no_recogido_motivo ?? "" },
+];
+
+/** Escapa un valor para CSV (comillas dobles y separador dentro del texto). */
+function celdaCsv(v: string) {
+  return /[";\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+/**
+ * Se usa punto y coma, no coma: Excel en configuración regional de Perú
+ * (y España) espera `;` y con `,` mete todo en una sola columna. El BOM del
+ * inicio es lo que hace que Excel lea el archivo como UTF-8 — sin él, las
+ * tildes y las eñes salen rotas.
+ */
+function armarCsv(filas: ReporteRow[]) {
+  const lineas = [
+    COLUMNAS_CSV.map((c) => celdaCsv(c.header)).join(";"),
+    ...filas.map((r) => COLUMNAS_CSV.map((c) => celdaCsv(c.valor(r))).join(";")),
+  ];
+  return "﻿" + lineas.join("\r\n");
+}
+
 /** Arma una hoja con encabezado congelado y autofiltro. */
 function armarHoja(
   workbook: ExcelJS.Workbook,
@@ -124,6 +173,17 @@ export async function GET(request: NextRequest) {
   const { data, error } = await construirConsulta(supabase, filtros);
   if (error) return new NextResponse("No se pudo generar el reporte", { status: 500 });
   const rows = (data ?? []) as unknown as ReporteRow[];
+
+  if (sp.formato === "csv") {
+    const nombreCsv = `skyhigh-ordenes_${filtros.desde}_a_${filtros.hasta}.csv`;
+    return new NextResponse(armarCsv(rows), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${nombreCsv}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "SkyHigh Rutas";

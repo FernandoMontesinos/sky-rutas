@@ -1,7 +1,7 @@
 import JSZip from "jszip";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { construirConsulta, parseFiltros } from "@/lib/reportes";
+import { construirConsulta, fechaHoraLima, parseFiltros } from "@/lib/reportes";
 
 // Lee cookies y querystring: siempre se resuelve por request, nunca se prerenderiza.
 export const dynamic = "force-dynamic";
@@ -14,15 +14,20 @@ export const maxDuration = 60;
 type FilaGuia = {
   id: string;
   numero_pedido: string;
+  tipo: "entrega" | "recojo";
+  cliente: string | null;
   numero_guia: string | null;
+  completed_at: string | null;
   guia_url: string | null;
   guias_urls: string[] | null;
+  material_urls: string[] | null;
 };
 
-const SELECT_GUIAS = "id, numero_pedido, numero_guia, guia_url, guias_urls";
+const SELECT_GUIAS =
+  "id, numero_pedido, tipo, cliente, numero_guia, completed_at, guia_url, guias_urls, material_urls";
 
 // Topes propios, mucho más bajos que el de Excel (LIMITE_FILAS = 5000):
-// acá cada fila implica además descargar 1-3 fotos desde Storage antes de
+// acá cada fila implica además descargar sus fotos desde Storage antes de
 // poder responder, así que el costo real es por foto, no por fila.
 const LIMITE_ORDENES = 300;
 const LIMITE_FOTOS = 600;
@@ -34,19 +39,27 @@ function extDeUrl(url: string): string {
   return punto === -1 ? "jpg" : sinQuery.slice(punto + 1).toLowerCase();
 }
 
-/** Nombre de archivo seguro: solo letras/números/guiones, tope de largo. */
+/** Nombre seguro para carpeta/archivo en Windows, Mac y Linux. */
 function sanear(s: string): string {
-  const limpio = s.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
-  return limpio.slice(0, 40) || "sin-dato";
+  const limpio = s.replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "");
+  return limpio.slice(0, 60) || "sin-dato";
+}
+
+function celdaCsv(v: string) {
+  return /[";\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 }
 
 async function enLotes<T, R>(items: T[], tamano: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const resultados: R[] = [];
   for (let i = 0; i < items.length; i += tamano) {
-    const lote = items.slice(i, i + tamano);
-    resultados.push(...(await Promise.all(lote.map(fn))));
+    resultados.push(...(await Promise.all(items.slice(i, i + tamano).map(fn))));
   }
   return resultados;
+}
+
+/** Las guías de una orden, con el respaldo al campo viejo de una sola guía. */
+function guiasDe(f: FilaGuia): string[] {
+  return f.guias_urls?.length ? f.guias_urls : f.guia_url ? [f.guia_url] : [];
 }
 
 export async function GET(request: NextRequest) {
@@ -67,64 +80,121 @@ export async function GET(request: NextRequest) {
   }
 
   const sp = Object.fromEntries(request.nextUrl.searchParams);
-  const filtros = parseFiltros(sp);
+  const ordenId = sp.orden?.trim();
 
-  // Se pide un tope más para poder distinguir "hay exactamente el tope" de
-  // "hay más de lo que se puede procesar", sin una consulta de conteo aparte.
-  const { data, error } = await construirConsulta(supabase, filtros, SELECT_GUIAS).limit(
-    LIMITE_ORDENES + 1
-  );
-  if (error) return new NextResponse("No se pudo generar el ZIP", { status: 500 });
-  const filas = (data ?? []) as unknown as FilaGuia[];
+  let filas: FilaGuia[];
+  let nombreZip: string;
 
-  if (filas.length > LIMITE_ORDENES) {
-    return new NextResponse(
-      `Hay más de ${LIMITE_ORDENES} órdenes en ese rango — acota el rango de fechas para descargar las guías.`,
-      { status: 413 }
+  if (ordenId) {
+    // Modo "una sola orden": el botón que vive en la ficha. Sin filtros de
+    // fecha ni topes — es una orden, y quien la está mirando ya la eligió.
+    const { data, error } = await supabase
+      .from("orders")
+      .select(SELECT_GUIAS)
+      .eq("id", ordenId)
+      .maybeSingle();
+    if (error) return new NextResponse("No se pudo generar el ZIP", { status: 500 });
+    if (!data) return new NextResponse("Orden no encontrada", { status: 404 });
+    filas = [data as unknown as FilaGuia];
+    nombreZip = `guias_${sanear(filas[0].numero_pedido)}.zip`;
+  } else {
+    const filtros = parseFiltros(sp);
+    // Se pide un tope más para distinguir "hay exactamente el tope" de "hay
+    // más de lo que se puede procesar", sin una consulta de conteo aparte.
+    const { data, error } = await construirConsulta(supabase, filtros, SELECT_GUIAS).limit(
+      LIMITE_ORDENES + 1
     );
+    if (error) return new NextResponse("No se pudo generar el ZIP", { status: 500 });
+    filas = (data ?? []) as unknown as FilaGuia[];
+
+    if (filas.length > LIMITE_ORDENES) {
+      return new NextResponse(
+        `Hay más de ${LIMITE_ORDENES} órdenes en ese rango — acota el rango de fechas para descargar las guías.`,
+        { status: 413 }
+      );
+    }
+    nombreZip = `skyhigh-guias_${filtros.desde}_a_${filtros.hasta}.zip`;
   }
 
-  // Cada orden puede aportar varias fotos de guía (marcarEnTransito y
-  // completeOrder van sumando a guias_urls, no reemplazando), así que el
-  // nombre de archivo tiene que ser por FOTO, no por orden — de lo
-  // contrario la segunda foto de una misma orden pisa a la primera dentro
-  // del ZIP. Se suma el numero_pedido (único) como sufijo estable: dos
-  // órdenes con el mismo numero_guia (tipeo, copy-paste) no chocan entre sí.
-  const fotos: { url: string; nombre: string }[] = [];
-  for (const fila of filas) {
-    const urls = fila.guias_urls?.length ? fila.guias_urls : fila.guia_url ? [fila.guia_url] : [];
-    urls.forEach((url, idx) => {
-      const base = `${sanear(fila.numero_pedido)}_${sanear(fila.numero_guia ?? "sin-guia")}`;
-      fotos.push({ url, nombre: `${base}-${idx + 1}.${extDeUrl(url)}` });
+  // Una carpeta por orden, nombrada "N°pedido_N°guía". Dentro, los archivos
+  // numerados por tipo: guia-1, guia-2, material-1… Antes iba todo plano y
+  // con el nombre armado solo desde el N° de guía, así que dos fotos de la
+  // misma orden se pisaban entre sí y no había forma de saber cuál era cuál.
+  const archivos: { url: string; ruta: string }[] = [];
+  const indice: string[][] = [];
+
+  for (const f of filas) {
+    const guias = guiasDe(f);
+    const material = f.material_urls ?? [];
+    if (guias.length === 0 && material.length === 0) continue;
+
+    const carpeta = `${sanear(f.numero_pedido)}_${sanear(f.numero_guia ?? "sin-guia")}`;
+    guias.forEach((url, i) =>
+      archivos.push({ url, ruta: `${carpeta}/guia-${i + 1}.${extDeUrl(url)}` })
+    );
+    material.forEach((url, i) =>
+      archivos.push({ url, ruta: `${carpeta}/material-${i + 1}.${extDeUrl(url)}` })
+    );
+
+    indice.push([
+      f.numero_pedido,
+      f.tipo === "entrega" ? "Cotización" : "Pedido",
+      f.cliente ?? "",
+      f.numero_guia ?? "",
+      fechaHoraLima(f.completed_at),
+      carpeta,
+      String(guias.length),
+      String(material.length),
+    ]);
+  }
+
+  if (archivos.length === 0) {
+    return new NextResponse("No hay fotos de guía ni de material en esa selección.", {
+      status: 404,
     });
   }
-
-  if (fotos.length === 0) {
-    return new NextResponse("No hay fotos de guía en ese rango.", { status: 404 });
-  }
-  if (fotos.length > LIMITE_FOTOS) {
+  if (archivos.length > LIMITE_FOTOS) {
     return new NextResponse(
-      `Hay más de ${LIMITE_FOTOS} fotos de guía en ese rango — acota el rango de fechas para descargarlas.`,
+      `Hay más de ${LIMITE_FOTOS} fotos en ese rango — acota el rango de fechas para descargarlas.`,
       { status: 413 }
     );
   }
 
   const zip = new JSZip();
-  await enLotes(fotos, LOTE_DESCARGA, async ({ url, nombre }) => {
+
+  // Índice del contenido: sin esto el ZIP se explica solo a medias (qué
+  // carpeta es de qué cliente, cuándo se cerró). Mismo formato que el CSV de
+  // órdenes: punto y coma + BOM, para que Excel lo abra bien de una.
+  const cabecera = [
+    "N° pedido",
+    "Tipo",
+    "Cliente / Proveedor",
+    "N° de guía",
+    "Fecha de completado",
+    "Carpeta",
+    "Fotos de guía",
+    "Fotos de material",
+  ];
+  zip.file(
+    "resumen.csv",
+    "﻿" +
+      [cabecera, ...indice].map((f) => f.map(celdaCsv).join(";")).join("\r\n")
+  );
+
+  await enLotes(archivos, LOTE_DESCARGA, async ({ url, ruta }) => {
     try {
       const res = await fetch(url);
       if (!res.ok) {
         console.error("[export-guias] no se pudo descargar", { url, status: res.status });
         return;
       }
-      zip.file(nombre, await res.arrayBuffer());
+      zip.file(ruta, await res.arrayBuffer());
     } catch (err) {
       console.error("[export-guias] error al descargar", { url, err });
     }
   });
 
   const buffer = await zip.generateAsync({ type: "nodebuffer" });
-  const nombreZip = `skyhigh-guias_${filtros.desde}_a_${filtros.hasta}.zip`;
 
   return new NextResponse(new Uint8Array(buffer), {
     headers: {

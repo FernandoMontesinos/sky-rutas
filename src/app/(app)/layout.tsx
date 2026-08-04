@@ -41,6 +41,7 @@ const NAV_REPARTIDOR: NavEntry[] = [
     icon: "truck",
   },
   { href: "/ordenes?panel=completadas", label: "Completadas", short: "Listas", icon: "check-circle" },
+  { href: "/mapa", label: "Mapa", icon: "map" },
 ];
 
 export default async function AppLayout({

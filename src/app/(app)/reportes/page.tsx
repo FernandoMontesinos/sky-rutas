@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, FileArchive, Search } from "lucide-react";
+import { ChevronDown, Download, FileArchive, Search } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge, TypeBadge } from "@/components/badges";
@@ -202,13 +202,40 @@ export default async function ReportesPage({
             Descargar guías (ZIP)
           </a>
 
-          <a
-            href={`/api/export?${filtrosAQuery(filtros)}`}
-            className="flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700"
-          >
-            <Download className="h-4 w-4" strokeWidth={2.25} />
-            Exportar a Excel
-          </a>
+          {/*
+            Desplegable en <details> en vez de un menú con JavaScript: la
+            pantalla entera es un form GET que funciona sin JS, y no hay
+            razón para que el botón de exportar sea la excepción. Excel va
+            primero porque es lo que se usa siempre; CSV es para cuando hay
+            que meter la data en otro sistema.
+          */}
+          <details className="relative">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700">
+              <Download className="h-4 w-4" strokeWidth={2.25} />
+              Exportar
+              <ChevronDown className="h-3.5 w-3.5" strokeWidth={2.5} />
+            </summary>
+            <div className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+              <a
+                href={`/api/export?${filtrosAQuery(filtros)}`}
+                className="block px-3 py-2.5 text-sm transition hover:bg-gray-50"
+              >
+                <span className="font-semibold text-gray-800">Excel (.xlsx)</span>
+                <span className="block text-xs text-gray-500">
+                  Dos hojas: Cotizaciones y Pedidos
+                </span>
+              </a>
+              <a
+                href={`/api/export?formato=csv&${filtrosAQuery(filtros)}`}
+                className="block border-t border-gray-100 px-3 py-2.5 text-sm transition hover:bg-gray-50"
+              >
+                <span className="font-semibold text-gray-800">CSV (.csv)</span>
+                <span className="block text-xs text-gray-500">
+                  Una sola tabla, con columna Tipo
+                </span>
+              </a>
+            </div>
+          </details>
         </div>
       </form>
 
