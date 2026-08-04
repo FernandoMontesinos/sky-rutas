@@ -1,7 +1,15 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState, startTransition } from "react";
-import { CheckCircle2, AlertTriangle, Camera, ScanText, Truck, PackageX } from "lucide-react";
+import {
+  CheckCircle2,
+  AlertTriangle,
+  Camera,
+  FileText,
+  ScanText,
+  Truck,
+  PackageX,
+} from "lucide-react";
 import {
   completeOrder,
   marcarEnTransito,
@@ -62,6 +70,60 @@ function useOcrNumeroGuia(
   }, [images]);
 
   return ocrEstado;
+}
+
+function esPdf(url: string) {
+  return url.split("?")[0].toLowerCase().endsWith(".pdf");
+}
+
+/**
+ * La guía que ya se subió al recoger, en modo lectura. Quien cuenta la
+ * mercadería necesita VERLA para comparar contra lo que tiene enfrente —
+ * antes no la tenía a mano en este paso, solo un selector de fotos vacío que
+ * parecía pedirle que la subiera de nuevo.
+ */
+function GuiaRegistrada({ urls, numero }: { urls: string[]; numero?: string | null }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <FileText className="h-4 w-4 shrink-0 text-gray-400" strokeWidth={2.25} />
+        <span className="font-medium text-gray-700">
+          Guía del recojo{urls.length > 1 && ` (${urls.length} fotos)`}
+        </span>
+        {numero && <span className="font-semibold text-gray-900">N° {numero}</span>}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {urls.map((u, i) =>
+          esPdf(u) ? (
+            <a
+              key={u}
+              href={u}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-lg border border-gray-200 bg-gray-50 text-[10px] text-gray-500 transition hover:border-brand hover:text-brand"
+            >
+              <FileText className="h-5 w-5" strokeWidth={1.75} />
+              PDF
+            </a>
+          ) : (
+            <a key={u} href={u} target="_blank" rel="noopener noreferrer">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={u}
+                alt={`Guía ${i + 1}`}
+                className="h-16 w-16 rounded-lg border border-gray-200 bg-white object-cover transition hover:border-brand"
+              />
+            </a>
+          )
+        )}
+      </div>
+
+      <p className="mt-2 text-xs text-gray-500">
+        Tócala para verla completa y comparar con lo que estás contando.
+      </p>
+    </div>
+  );
 }
 
 function OcrHint({ estado }: { estado: OcrEstado }) {
@@ -244,6 +306,7 @@ export default function CompletarForm({
   tipo,
   verificando = false,
   numeroGuiaActual,
+  guiasActuales = [],
 }: {
   orderId: string;
   tipo: OrderType;
@@ -253,6 +316,8 @@ export default function CompletarForm({
   /** Si ya se escribió el número de guía en el paso de recojo, acá es
    *  editable por si hay que corregirlo, pero no obligatorio de nuevo. */
   numeroGuiaActual?: string | null;
+  /** Guías ya subidas: se muestran para consultarlas al contar. */
+  guiasActuales?: string[];
 }) {
   const [state, action, pending] = useActionState<FormResult, FormData>(
     completeOrder,
@@ -295,13 +360,14 @@ export default function CompletarForm({
   const accionParticipio = tipo === "entrega" ? "entregado" : "recogido";
   const errorMsg = localError ?? state.error;
 
-  return (
-    <div className="space-y-4 rounded-2xl border border-brand/30 bg-brand/5 p-4">
-      <h2 className="flex items-center gap-2 font-semibold text-gray-900">
-        <Camera className="h-5 w-5 text-brand" />
-        {verificando ? "Foto(s) adicionales (opcional)" : "Foto(s) de la guía"}
-      </h2>
+  // La guía ya vino del recojo: este paso es CONTAR y cerrar, no volver a
+  // subirla. Se muestra la que existe para consultarla, y el selector pasa a
+  // un paso extra plegado — un caso excepcional (guía borrosa, o el proveedor
+  // despachó con dos guías) no debe ocupar el mismo espacio que lo habitual.
+  const yaHayGuia = verificando && guiasActuales.length > 0;
 
+  const camposGuia = (
+    <>
       <MultiImagePicker label="" images={images} onChange={setImages} />
 
       <div>
@@ -325,6 +391,30 @@ export default function CompletarForm({
         </span>
         <MultiImagePicker label="" images={materialImages} onChange={setMaterialImages} />
       </div>
+    </>
+  );
+
+  return (
+    <div className="space-y-4 rounded-2xl border border-brand/30 bg-brand/5 p-4">
+      <h2 className="flex items-center gap-2 font-semibold text-gray-900">
+        <Camera className="h-5 w-5 text-brand" />
+        {yaHayGuia ? "Contar y cerrar la orden" : "Foto(s) de la guía"}
+      </h2>
+
+      {yaHayGuia ? (
+        <>
+          <GuiaRegistrada urls={guiasActuales} numero={numeroGuiaActual} />
+          <details className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-gray-600">
+              <Camera className="h-4 w-4 shrink-0 text-gray-400" strokeWidth={2.25} />
+              Agregar otra guía, fotos del material o corregir el N°
+            </summary>
+            <div className="mt-3 space-y-3">{camposGuia}</div>
+          </details>
+        </>
+      ) : (
+        camposGuia
+      )}
 
       <div>
         <span className="mb-1.5 block text-sm font-medium text-gray-700">

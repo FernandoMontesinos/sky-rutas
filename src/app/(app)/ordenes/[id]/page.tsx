@@ -59,10 +59,13 @@ export default async function OrdenDetallePage({
   const isMine = order.assigned_to === userId;
   const isRepartidor = profile.role === "repartidor";
   const isAlmacen = profile.role === "almacen";
-  // Mismos roles que ahora permite la política RLS de UPDATE sobre orders:
-  // admin/almacén siempre, el repartidor asignado, o quien creó la orden.
+  // Quitar el PDF/foto de la orden es de Ventas y Admin, igual que corregir
+  // los datos: el documento lo carga Ventas y el resto solo lo consulta para
+  // despachar. Con la "×" a la vista de todos era cuestión de tiempo que
+  // alguien borrara la cotización sin querer.
   const puedeEditarAdjuntos =
-    canAssign || (isRepartidor && isMine) || order.created_by === userId;
+    profile.role === "admin" ||
+    (profile.role === "vendedor" && order.estado === "pendiente");
   // Almacén normalmente termina su trabajo en "asignar" cuando hay un
   // repartidor de por medio (modalidad reparto) — es el repartidor quien
   // confirma desde su celular. Pero conserva la opción de completarla él
@@ -336,7 +339,12 @@ export default async function OrdenDetallePage({
       {!esRecojoPorConfirmar && canComplete && (isRepartidor ? order.assigned_to : true) && (
         almacenReparto && !estaEnTransito ? (
           <AlmacenOverrideCompletar repartidorNombre={order.repartidor?.full_name ?? "el repartidor asignado"}>
-            <CompletarForm orderId={order.id} tipo={order.tipo} numeroGuiaActual={order.numero_guia} />
+            <CompletarForm
+              orderId={order.id}
+              tipo={order.tipo}
+              numeroGuiaActual={order.numero_guia}
+              guiasActuales={imagenesGuia}
+            />
           </AlmacenOverrideCompletar>
         ) : (
           <CompletarForm
@@ -344,6 +352,7 @@ export default async function OrdenDetallePage({
             tipo={order.tipo}
             verificando={estaEnTransito}
             numeroGuiaActual={order.numero_guia}
+            guiasActuales={imagenesGuia}
           />
         )
       )}

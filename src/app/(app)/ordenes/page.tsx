@@ -372,11 +372,11 @@ export default async function OrdenesPage({
     sp.panel === "recogidas" || sp.panel === "completadas" ? sp.panel : "por-hacer";
   const rutaPropia = isRepartidor && !verTodas;
   const formato = !rutaPropia && sp.formato === "tabla" ? "tabla" : "kanban";
-  // Compacto por defecto: es la vista pensada para decidir de un vistazo;
-  // detallado es la que ya existía, con imagen/modalidad/creador. El
-  // repartidor va siempre en detallada: en la calle la miniatura y el motivo
-  // del fallo anterior le sirven, y una densidad menos que elegir también.
-  const detallado = rutaPropia || sp.densidad === "detallada";
+  // Compacto por defecto para todos los roles, repartidor incluido: es la
+  // vista pensada para decidir de un vistazo y entran más órdenes en una
+  // pantalla de celular. Detallada (con miniatura, modalidad y creador)
+  // queda a un toque para cuando hace falta más contexto.
+  const detallado = sp.densidad === "detallada";
   const rango: RangoCompletadas =
     sp.rango === "semana" || sp.rango === "mes" ? sp.rango : "hoy";
 
@@ -399,8 +399,7 @@ export default async function OrdenesPage({
       vista: verTodas ? "todas" : undefined,
       panel: panel !== "por-hacer" ? panel : undefined,
       formato: formato === "tabla" ? "tabla" : undefined,
-      // En "Mi ruta" la densidad es fija, así que no se arrastra en la URL.
-      densidad: !rutaPropia && detallado ? "detallada" : undefined,
+      densidad: detallado ? "detallada" : undefined,
       rango: rango !== "hoy" ? rango : undefined,
       q: q || undefined,
       repartidor: fRepartidor || undefined,
@@ -524,8 +523,8 @@ export default async function OrdenesPage({
             </div>
           )}
 
-          {/* Kanban/Tabla y Compacta/Detallada son controles de gestión: en
-              "Mi ruta" solo estorban en una pantalla de celular. */}
+          {/* Kanban/Tabla es un control de gestión: en "Mi ruta" no aplica
+              porque el repartidor ya tiene sus tres pestañas. */}
           {!rutaPropia && (
             <div className="inline-flex rounded-xl bg-gray-100 p-1">
               <Link
@@ -550,7 +549,7 @@ export default async function OrdenesPage({
           )}
         </div>
 
-        {formato === "kanban" && !rutaPropia && (
+        {formato === "kanban" && (
           <div className="inline-flex rounded-xl bg-gray-100 p-1">
             <Link
               href={href({ densidad: undefined })}
@@ -605,7 +604,7 @@ export default async function OrdenesPage({
         {verTodas && <input type="hidden" name="vista" value="todas" />}
         {panel !== "por-hacer" && <input type="hidden" name="panel" value={panel} />}
         {formato === "tabla" && <input type="hidden" name="formato" value="tabla" />}
-        {!rutaPropia && detallado && <input type="hidden" name="densidad" value="detallada" />}
+        {detallado && <input type="hidden" name="densidad" value="detallada" />}
         {rango !== "hoy" && <input type="hidden" name="rango" value={rango} />}
 
         {/* Sin id: este bloque se renderiza dos veces (móvil y escritorio) y

@@ -828,12 +828,19 @@ export async function deleteOrder(_prev: FormResult, formData: FormData): Promis
 }
 
 /**
- * Quita un PDF/imagen adjunto a la orden (no la orden completa — eso
- * sigue siendo solo para admin, ver `deleteOrder`). RLS deja hacer esto
- * a admin/almacén, al repartidor asignado, o a quien creó la orden.
+ * Quita un PDF/imagen adjunto a la orden (no la orden completa — eso es
+ * `deleteOrder`).
+ *
+ * Solo Ventas y Admin: el documento de la cotización/pedido lo carga Ventas
+ * al crear la orden y es la referencia con la que todos los demás trabajan.
+ * Almacén y el repartidor lo necesitan para despachar, no para editarlo — y
+ * teniendo la "×" a mano era cuestión de tiempo que alguien la tocara sin
+ * querer. Ventas, además, solo mientras la orden siga Pendiente (mismo
+ * límite que para corregir los datos; la base también lo exige, ver
+ * 30_vendedor_adjuntos.sql).
  */
 export async function eliminarAdjunto(formData: FormData): Promise<void> {
-  await requireRole(["admin", "vendedor", "almacen", "repartidor"]);
+  const { profile } = await requireRole(["admin", "vendedor"]);
 
   const orderId = String(formData.get("order_id") ?? "");
   const url = String(formData.get("url") ?? "");
@@ -842,10 +849,11 @@ export async function eliminarAdjunto(formData: FormData): Promise<void> {
   const supabase = await createClient();
   const { data: order } = await supabase
     .from("orders")
-    .select("imagen_url, imagenes_urls")
+    .select("imagen_url, imagenes_urls, estado")
     .eq("id", orderId)
     .single();
   if (!order) return;
+  if (profile.role === "vendedor" && order.estado !== "pendiente") return;
 
   const restantes = (order.imagenes_urls ?? []).filter((u: string) => u !== url);
   await supabase
