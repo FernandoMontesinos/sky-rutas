@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { PackagePlus, PackageCheck, Truck, ClipboardList, Bell } from "lucide-react";
+import { redirect } from "next/navigation";
+import { PackagePlus, PackageCheck, ClipboardList, Bell } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ROLE_LABEL } from "@/lib/types";
@@ -16,16 +17,18 @@ function tiempoRelativo(iso: string) {
 
 export default async function HomePage() {
   const { userId, profile } = await requireUser();
+  // El repartidor trabaja desde la lista de órdenes: esta pantalla de resumen
+  // no le aporta nada, así que al entrar (y al iniciar sesión) cae directo ahí.
+  if (profile.role === "repartidor") redirect("/ordenes");
   const supabase = await createClient();
 
   // Conteos según rol
   const base = () => supabase.from("orders").select("*", { count: "exact", head: true });
 
-  const [pendientes, asignadas, completadasHoy, { data: actividad }] = await Promise.all([
+  const [pendientes, asignadas, enTransito, completadasHoy, { data: actividad }] = await Promise.all([
     base().eq("estado", "pendiente"),
-    profile.role === "repartidor"
-      ? base().eq("estado", "asignado").eq("assigned_to", userId)
-      : base().eq("estado", "asignado"),
+    base().eq("estado", "asignado"),
+    base().eq("estado", "en_transito"),
     base()
       .eq("estado", "completado")
       .gte("completed_at", new Date(new Date().setHours(0, 0, 0, 0)).toISOString()),
@@ -39,14 +42,20 @@ export default async function HomePage() {
 
   const cards = [
     {
-      label: profile.role === "repartidor" ? "Por hacer" : "Pendientes",
-      value: profile.role === "repartidor" ? asignadas.count ?? 0 : pendientes.count ?? 0,
+      label: "Pendientes",
+      value: pendientes.count ?? 0,
       tone: "bg-gray-100 text-gray-800",
     },
     {
-      label: profile.role === "repartidor" ? "Asignadas a ti" : "Asignadas",
+      label: "Asignadas",
       value: asignadas.count ?? 0,
       tone: "bg-amber-50 text-amber-800",
+    },
+    {
+      // Pedidos ya recogidos que esperan que alguien cuente los ítems.
+      label: "En Tránsito",
+      value: enTransito.count ?? 0,
+      tone: "bg-sky-50 text-sky-800",
     },
     {
       label: "Completadas hoy",
@@ -69,7 +78,7 @@ export default async function HomePage() {
 
       <PushPrompt userId={userId} />
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {cards.map((c) => (
           <div key={c.label} className={`rounded-2xl p-4 ${c.tone}`}>
             <div className="text-3xl font-black">{c.value}</div>
@@ -104,21 +113,6 @@ export default async function HomePage() {
               Asignar órdenes a repartidores
               <span className="mt-1 block text-sm font-normal text-gray-500">
                 {pendientes.count ?? 0} pendiente(s) por asignar
-              </span>
-            </span>
-          </Link>
-        )}
-
-        {profile.role === "repartidor" && (
-          <Link
-            href="/ordenes"
-            className="flex items-start gap-3 rounded-2xl bg-brand p-5 font-semibold text-white shadow transition hover:bg-brand-dark hover:shadow-md"
-          >
-            <Truck className="mt-0.5 h-6 w-6 shrink-0" strokeWidth={2} />
-            <span>
-              Ver mi ruta del día
-              <span className="mt-1 block text-sm font-normal opacity-90">
-                Entra a cada orden y toma la foto de la guía
               </span>
             </span>
           </Link>

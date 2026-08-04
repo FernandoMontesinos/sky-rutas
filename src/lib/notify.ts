@@ -1,5 +1,6 @@
 import webpush from "web-push";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { UserRole } from "@/lib/types";
 
 const vapidReady =
@@ -16,22 +17,41 @@ if (vapidReady) {
 export type NotifTipo =
   | "orden_pendiente"
   | "orden_asignada"
+  | "orden_en_transito"
+  | "orden_editada"
   | "orden_completada"
   | "orden_parcial";
 
-type Supabase = Awaited<ReturnType<typeof createClient>>;
+type PushSub = { id: string; user_id: string; endpoint: string; p256dh: string; auth_key: string };
+
+/**
+ * Borra una suscripción push que el navegador ya rechazó (404/410).
+ *
+ * Necesita service_role: casi siempre se notifica a OTRA persona (vendedor
+ * crea -> avisa a almacén), así que con el cliente de sesión del actor la
+ * policy push_subscriptions_delete (user_id = auth.uid()) nunca matchea la
+ * fila del destinatario — el delete "funciona" (0 filas, sin error) pero la
+ * suscripción muerta queda para siempre.
+ *
+ * Todo va dentro del try a propósito, incluida la construcción del cliente:
+ * createAdminClient() LANZA si falta SUPABASE_SERVICE_ROLE_KEY, y esta
+ * limpieza es de mejor esfuerzo. Sin esta red, una variable de entorno mal
+ * puesta tumbaría notify() entero y con él la acción que lo llamó — o sea,
+ * no se podría ni crear una orden por no poder borrar una suscripción vieja.
+ */
+async function limpiarSuscripcionVencida(id: string) {
+  try {
+    await createAdminClient().from("push_subscriptions").delete().eq("id", id);
+  } catch (err) {
+    console.error("[notify] no se pudo limpiar la suscripción vencida", { id, err });
+  }
+}
 
 async function sendPushToUser(
-  supabase: Supabase,
-  userId: string,
+  subs: PushSub[],
   payload: { title: string; body: string; url: string }
 ) {
-  if (!vapidReady) return;
-  const { data: subs } = await supabase
-    .from("push_subscriptions")
-    .select("id, endpoint, p256dh, auth_key")
-    .eq("user_id", userId);
-  if (!subs || subs.length === 0) return;
+  if (!vapidReady || subs.length === 0) return;
 
   const body = JSON.stringify(payload);
   await Promise.all(
@@ -50,7 +70,9 @@ async function sendPushToUser(
         // Suscripción vencida o inválida (celular desinstaló, permiso revocado, etc.)
         const statusCode = (err as { statusCode?: number }).statusCode;
         if (statusCode === 404 || statusCode === 410) {
-          await supabase.from("push_subscriptions").delete().eq("id", s.id);
+          await limpiarSuscripcionVencida(s.id);
+        } else {
+          console.error("[notify] fallo de push no manejado", { statusCode, userId: s.user_id });
         }
       }
     })
@@ -73,7 +95,11 @@ export async function notify(
   const supabase = await createClient();
   const url = opts.url ?? (opts.orderId ? `/ordenes/${opts.orderId}` : "/ordenes");
 
-  await supabase.from("notifications").insert(
+  // Se mira el error a propósito: supabase-js no lanza excepción ante un fallo
+  // de base, devuelve { error }. Sin esto, un tipo que no existe en el enum
+  // notif_tipo (o cualquier rechazo de RLS) desaparecía sin dejar rastro y la
+  // notificación simplemente no llegaba, sin forma de saber por qué.
+  const { error } = await supabase.from("notifications").insert(
     unicos.map((user_id) => ({
       user_id,
       order_id: opts.orderId ?? null,
@@ -82,10 +108,24 @@ export async function notify(
       mensaje: opts.mensaje,
     }))
   );
+  if (error) {
+    console.error("[notify] no se pudo guardar la notificación", {
+      tipo: opts.tipo,
+      code: error.code,
+      message: error.message,
+    });
+  }
 
-  await Promise.all(
-    unicos.map((id) => sendPushToUser(supabase, id, { title: opts.titulo, body: opts.mensaje, url }))
-  );
+  if (vapidReady) {
+    // Una sola consulta para todos los destinatarios en vez de una por
+    // usuario: notify() ya recibe la lista completa, así que N+1 acá era
+    // innecesario — el mismo payload se manda a todas las suscripciones.
+    const { data: subs } = await supabase
+      .from("push_subscriptions")
+      .select("id, user_id, endpoint, p256dh, auth_key")
+      .in("user_id", unicos);
+    await sendPushToUser((subs ?? []) as PushSub[], { title: opts.titulo, body: opts.mensaje, url });
+  }
 }
 
 /** Ids de usuarios activos con el rol dado (para notificar a "todo almacén", etc.). */

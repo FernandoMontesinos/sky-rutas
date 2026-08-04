@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { notify, userIdsByRole } from "@/lib/notify";
+import { DIVISION_SUFIJO, type DivisionTipo } from "@/lib/types";
+import { CAMPO_LABEL, registrarEvento, registrarEventos } from "@/lib/historial";
 
 export type FormResult = { error?: string; ok?: boolean };
 
@@ -12,6 +14,136 @@ function extFromType(type: string, fallback: string) {
   const ext = type.split("/")[1];
   if (!ext) return fallback;
   return ext === "jpeg" ? "jpg" : ext;
+}
+
+/** Escapa los comodines de LIKE para que un número con "%" o "_" no traiga de más. */
+function escaparLike(texto: string) {
+  return texto.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * Número de la orden raíz: sube por parent_order_id hasta la primera orden sin
+ * padre. El tope de saltos es una red de seguridad — parent_order_id es una FK
+ * autorreferente sin protección de ciclos, así que un dato torcido (A→B→A) no
+ * debe colgar la petición.
+ */
+async function numeroRaiz(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  orderId: string,
+  numeroActual: string
+): Promise<string> {
+  let id = orderId;
+  let numero = numeroActual;
+  for (let salto = 0; salto < 10; salto++) {
+    const { data } = await supabase
+      .from("orders")
+      .select("parent_order_id, numero_pedido")
+      .eq("id", id)
+      .single();
+    if (!data?.parent_order_id) return numero;
+    const { data: padre } = await supabase
+      .from("orders")
+      .select("id, numero_pedido")
+      .eq("id", data.parent_order_id)
+      .single();
+    if (!padre) return numero;
+    id = padre.id;
+    numero = padre.numero_pedido;
+  }
+  return numero;
+}
+
+/**
+ * Siguiente número libre para una orden hija: S14665-R1, S14665-R2… (remanentes
+ * por error) y en paralelo S14665-E1, S14665-E2… (envíos planificados).
+ *
+ * Busca por PREFIJO en vez de contar hijas, a propósito. Contar se rompe de
+ * varias formas: si un admin borra una hija intermedia el conteo retrocede y
+ * reemite un número que sigue vivo; si se borra un nodo intermedio sus hijas
+ * quedan huérfanas (parent_order_id es ON DELETE SET NULL) y dejan de contarse
+ * aunque conserven su número; y no ve un número tipeado a mano por un vendedor.
+ * Mirar el máximo sufijo realmente emitido cubre los tres casos.
+ */
+async function siguienteNumeroDivision(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  orderId: string,
+  numeroActual: string,
+  tipo: DivisionTipo
+): Promise<string> {
+  const raiz = await numeroRaiz(supabase, orderId, numeroActual);
+  const sufijo = DIVISION_SUFIJO[tipo];
+
+  const { data: familia } = await supabase
+    .from("orders")
+    .select("numero_pedido")
+    .ilike("numero_pedido", `${escaparLike(raiz)}-${sufijo}%`);
+
+  const patron = new RegExp(`^${raiz.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-${sufijo}(\\d+)$`, "i");
+  let maximo = 0;
+  for (const o of familia ?? []) {
+    const m = patron.exec(o.numero_pedido);
+    if (m) maximo = Math.max(maximo, parseInt(m[1], 10));
+  }
+  return `${raiz}-${sufijo}${maximo + 1}`;
+}
+
+/**
+ * Crea la orden hija copiando los datos del padre. Reintenta si el número ya
+ * estaba tomado (23505 contra el índice único): entre calcular el número y
+ * escribirlo hay dos peticiones distintas, así que dos divisiones simultáneas
+ * pueden pedir el mismo.
+ */
+async function crearOrdenHija(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  padre: {
+    id: string;
+    numero_pedido: string;
+    cliente: string | null;
+    proyecto: string | null;
+    proveedor: string | null;
+    numero_pedido_compra: string | null;
+    tipo: string;
+    modalidad: string;
+    courier_tracking: string | null;
+    imagen_url: string | null;
+    imagenes_urls: string[] | null;
+    created_by: string | null;
+  },
+  tipo: DivisionTipo,
+  nota: string
+): Promise<{ id: string; numero: string } | { error: string }> {
+  for (let intento = 0; intento < 3; intento++) {
+    const numero = await siguienteNumeroDivision(supabase, padre.id, padre.numero_pedido, tipo);
+    const { data, error } = await supabase
+      .from("orders")
+      .insert({
+        numero_pedido: numero,
+        cliente: padre.cliente,
+        proyecto: padre.proyecto,
+        proveedor: padre.proveedor,
+        numero_pedido_compra: padre.numero_pedido_compra,
+        tipo: padre.tipo,
+        modalidad: padre.modalidad,
+        courier_tracking: padre.courier_tracking,
+        imagen_url: padre.imagen_url,
+        imagenes_urls: padre.imagenes_urls,
+        nota,
+        created_by: padre.created_by,
+        parent_order_id: padre.id,
+        division_tipo: tipo,
+        estado: "pendiente",
+      })
+      .select("id")
+      .single();
+
+    if (!error && data) return { id: data.id, numero };
+    // 23505 = número ya tomado: alguien más dividió al mismo tiempo, o el
+    // número existe a mano. Se recalcula y se vuelve a intentar.
+    if (error?.code !== "23505") {
+      return { error: error?.message ?? "No se pudo crear la orden." };
+    }
+  }
+  return { error: "No se pudo asignar un número libre para la orden nueva." };
 }
 
 /** Sube varios archivos a un bucket y devuelve sus URLs públicas, en orden. */
@@ -57,6 +189,15 @@ export async function createOrder(
   const imagenes = formData.getAll("imagenes").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!numero) return { error: "Ingresa el número de pedido." };
+  // El sufijo -R#/-E# identifica una orden hija generada por el sistema
+  // (remanente o envío dividido). Si se permitiera tipearlo a mano, dos
+  // números iguales (uno real, uno tipeado) podrían chocar más adelante
+  // con el que arma siguienteNumeroDivision() para esa misma familia.
+  const SUFIJO_DIVISION = new RegExp(`-(${Object.values(DIVISION_SUFIJO).join("|")})\\d+$`, "i");
+  if (SUFIJO_DIVISION.test(numero))
+    return {
+      error: `El número no puede terminar en "-${numero.match(SUFIJO_DIVISION)?.[1]?.toUpperCase()}#": ese sufijo lo asigna el sistema al dividir un envío.`,
+    };
   if (tipo !== "entrega" && tipo !== "recojo")
     return { error: "Selecciona si es CLIENTE o PROVEEDOR." };
   if (!["reparto", "oficina", "courier"].includes(modalidad))
@@ -75,7 +216,7 @@ export async function createOrder(
   const { data: existente } = await supabase
     .from("orders")
     .select("id")
-    .ilike("numero_pedido", numero)
+    .ilike("numero_pedido", escaparLike(numero))
     .maybeSingle();
   if (existente) {
     return { error: `Ya existe un pedido con el número "${numero}". Revisa que no sea un duplicado.` };
@@ -111,6 +252,8 @@ export async function createOrder(
     return { error: insErr.message };
   }
 
+  await registrarEvento(supabase, inserted.id, "creada");
+
   const almacenIds = await userIdsByRole("almacen");
   await notify(almacenIds, {
     tipo: "orden_pendiente",
@@ -138,6 +281,7 @@ export async function assignOrder(formData: FormData): Promise<void> {
       .from("orders")
       .update({ assigned_to: null, estado: "pendiente", assigned_at: null })
       .eq("id", orderId);
+    await registrarEvento(supabase, orderId, "desasignada");
   } else {
     const { data: updated } = await supabase
       .from("orders")
@@ -147,10 +291,12 @@ export async function assignOrder(formData: FormData): Promise<void> {
         assigned_at: new Date().toISOString(),
       })
       .eq("id", orderId)
-      .select("numero_pedido, cliente")
+      .select("numero_pedido, cliente, repartidor:profiles!orders_assigned_to_fkey(full_name)")
       .single();
 
     if (updated) {
+      const nombre = (updated.repartidor as unknown as { full_name: string } | null)?.full_name;
+      await registrarEvento(supabase, orderId, "asignada", nombre ?? null);
       await notify([repartidorId], {
         tipo: "orden_asignada",
         titulo: "Te asignaron una orden",
@@ -183,13 +329,315 @@ export async function updateModalidad(formData: FormData): Promise<void> {
     })
     .eq("id", orderId);
 
+  await registrarEvento(supabase, orderId, "modalidad", modalidad);
+
   revalidatePath(`/ordenes/${orderId}`);
   revalidatePath("/ordenes");
 }
 
+/**
+ * El repartidor confirma que recogió el material del proveedor, subiendo la
+ * guía. NO cierra la orden a propósito: él recibe bultos sellados y no cuenta
+ * los ítems, así que no puede afirmar que llegó completo. La orden queda "En
+ * Tránsito" hasta que alguien CUENTE la mercadería y la cierre con
+ * `completeOrder` — almacén cuando llega al depósito, o el propio repartidor
+ * cuando va directo al cliente y el cliente cuenta y firma delante suyo.
+ */
+export async function marcarEnTransito(
+  _prev: FormResult,
+  formData: FormData
+): Promise<FormResult> {
+  await requireRole(["repartidor", "almacen", "admin"]);
+
+  const orderId = String(formData.get("order_id") ?? "");
+  const numeroGuia = String(formData.get("numero_guia") ?? "").trim();
+  const guias = formData.getAll("guias").filter((f): f is File => f instanceof File && f.size > 0);
+  const material = formData.getAll("material").filter((f): f is File => f instanceof File && f.size > 0);
+
+  if (!orderId) return { error: "Orden inválida." };
+  if (guias.length === 0)
+    return { error: "Toma al menos una foto de la guía antes de confirmar." };
+  if (!numeroGuia) return { error: "Ingresa el número de guía (escrito a mano)." };
+
+  const supabase = await createClient();
+
+  // La misma carrera que ya se blindó en completeOrder/dividirEnvio: sin
+  // este chequeo, un reintento de red tardío (o una pestaña vieja) podía
+  // reescribir a "en_transito" una orden que almacén ya había cerrado.
+  const { data: actual } = await supabase
+    .from("orders")
+    .select("estado")
+    .eq("id", orderId)
+    .single();
+  if (!actual) return { error: "Orden inválida." };
+  if (actual.estado !== "asignado")
+    return { error: "Esta orden ya no está asignada; recarga la página para ver su estado actual." };
+
+  const { urls, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
+  if (upErr) return { error: "No se pudo subir la foto: " + upErr };
+  const { urls: materialUrls, error: matErr } =
+    material.length > 0
+      ? await uploadMany(supabase, "guias", `${orderId}/material`, material)
+      : { urls: [] as string[], error: undefined };
+  if (matErr) return { error: "No se pudo subir la foto del material: " + matErr };
+
+  const { data: updated, error } = await supabase
+    .from("orders")
+    .update({
+      guia_url: urls[0] ?? null,
+      guias_urls: urls,
+      numero_guia: numeroGuia,
+      material_urls: materialUrls,
+      estado: "en_transito",
+      en_transito_at: new Date().toISOString(),
+    })
+    .eq("id", orderId)
+    .select("numero_pedido, cliente")
+    .single();
+  if (error) return { error: error.message };
+
+  await registrarEvento(supabase, orderId, "recogida");
+
+  const almacenIds = await userIdsByRole("almacen");
+  await notify(almacenIds, {
+    tipo: "orden_en_transito",
+    titulo: "Material recogido — falta verificar",
+    mensaje: `#${updated.numero_pedido}${
+      updated.cliente ? " · " + updated.cliente : ""
+    } — cuenten los ítems para cerrarla.`,
+    orderId,
+  });
+
+  revalidatePath(`/ordenes/${orderId}`);
+  revalidatePath("/ordenes");
+  redirect("/ordenes");
+}
+
+/**
+ * El repartidor fue al proveedor y el material no estaba listo. La orden
+ * vuelve a "pendiente" y queda libre para reasignar — no es un estado del
+ * flujo, es un intento que falló. Se guarda el motivo y se suma un intento
+ * para que se vea qué proveedor está fallando repetido.
+ */
+export async function marcarNoRecogido(
+  _prev: FormResult,
+  formData: FormData
+): Promise<FormResult> {
+  await requireRole(["repartidor", "almacen", "admin"]);
+
+  const orderId = String(formData.get("order_id") ?? "");
+  const motivo = String(formData.get("motivo") ?? "").trim();
+
+  if (!orderId) return { error: "Orden inválida." };
+  if (!motivo) return { error: "Cuéntanos por qué no se pudo recoger." };
+
+  const supabase = await createClient();
+
+  const { data: actual } = await supabase
+    .from("orders")
+    .select("numero_pedido, cliente, no_recogido_intentos")
+    .eq("id", orderId)
+    .single();
+  if (!actual) return { error: "Orden inválida." };
+
+  const intentos = (actual.no_recogido_intentos ?? 0) + 1;
+
+  const { error } = await supabase
+    .from("orders")
+    .update({
+      estado: "pendiente",
+      assigned_to: null,
+      assigned_at: null,
+      no_recogido_intentos: intentos,
+      no_recogido_motivo: motivo,
+      no_recogido_at: new Date().toISOString(),
+    })
+    .eq("id", orderId);
+  if (error) return { error: error.message };
+
+  await registrarEvento(supabase, orderId, "no_recogida", motivo);
+
+  const almacenIds = await userIdsByRole("almacen");
+  await notify(almacenIds, {
+    tipo: "orden_pendiente",
+    titulo: `No se pudo recoger${intentos > 1 ? ` (intento ${intentos})` : ""}`,
+    mensaje: `#${actual.numero_pedido}${
+      actual.cliente ? " · " + actual.cliente : ""
+    } — ${motivo}`,
+    orderId,
+  });
+
+  revalidatePath(`/ordenes/${orderId}`);
+  revalidatePath("/ordenes");
+  redirect("/ordenes");
+}
+
+/** Campos que Ventas puede corregir después de crear la orden. El número
+ *  queda fuera a propósito: es la identidad de la orden, tiene índice único y
+ *  el trigger de la base lo bloquea aunque alguien llame a la API directo. */
+const CAMPOS_EDITABLES = [
+  "cliente",
+  "proyecto",
+  "nota",
+  "proveedor",
+  "numero_pedido_compra",
+] as const;
+
+/**
+ * Ventas corrige los datos de una orden. Cualquier vendedor puede hacerlo, no
+ * solo quien la creó (Ventas2 arregla lo que cargó Ventas1), pero solo
+ * mientras siga Pendiente: una vez que almacén la tomó, los datos ya se usaron
+ * para despachar.
+ *
+ * Almacén NO entra acá a propósito: estos son datos de la venta (cliente,
+ * proyecto, proveedor de compra), no del despacho. Si almacén ve algo mal, lo
+ * corrige Ventas — así el dato tiene un solo dueño y el historial no mezcla
+ * quién decide qué.
+ *
+ * Cada campo que realmente cambió queda en el historial con su valor anterior.
+ */
+export async function editarOrden(
+  _prev: FormResult,
+  formData: FormData
+): Promise<FormResult> {
+  const { userId } = await requireRole(["vendedor", "admin"]);
+
+  const orderId = String(formData.get("order_id") ?? "");
+  if (!orderId) return { error: "Orden inválida." };
+
+  const supabase = await createClient();
+
+  const { data: actual } = await supabase
+    .from("orders")
+    .select("id, estado, tipo, numero_pedido, cliente, proyecto, nota, proveedor, numero_pedido_compra, created_by")
+    .eq("id", orderId)
+    .single();
+  if (!actual) return { error: "Orden inválida." };
+  if (actual.estado !== "pendiente")
+    return {
+      error: "Esta orden ya está en camino; para corregirla ahora habla con almacén.",
+    };
+
+  const cambios: Record<string, string | null> = {};
+  const eventos: Array<{
+    tipo: "editada";
+    campo: string;
+    valorAntes: string | null;
+    valorDespues: string | null;
+  }> = [];
+
+  for (const campo of CAMPOS_EDITABLES) {
+    // Un campo ausente en el formulario no se toca (el bloque de compra solo
+    // se envía cuando la orden es de tipo Cliente).
+    if (!formData.has(campo)) continue;
+    const nuevo = String(formData.get(campo) ?? "").trim() || null;
+    const anterior = (actual as Record<string, unknown>)[campo] as string | null;
+    if (nuevo !== anterior) {
+      cambios[campo] = nuevo;
+      eventos.push({ tipo: "editada", campo, valorAntes: anterior, valorDespues: nuevo });
+    }
+  }
+
+  if (eventos.length === 0) return { ok: true };
+
+  // `.select().single()` a propósito: si RLS descarta la fila, PostgREST
+  // devuelve cero filas SIN error, y la acción reportaría éxito de un cambio
+  // que nunca ocurrió (y el historial registraría una mentira).
+  const { data: guardada, error } = await supabase
+    .from("orders")
+    .update(cambios)
+    .eq("id", orderId)
+    .select("id")
+    .single();
+  if (error || !guardada) {
+    return { error: error?.message ?? "No tienes permiso para editar esta orden." };
+  }
+
+  await registrarEventos(supabase, orderId, eventos);
+
+  // Avisa a quien la creó (si no es quien edita), a almacén y a los admin:
+  // almacén puede estar por despacharla con el dato viejo.
+  const [almacenIds, adminIds] = await Promise.all([
+    userIdsByRole("almacen"),
+    userIdsByRole("admin"),
+  ]);
+  const destinatarios = [
+    ...(actual.created_by && actual.created_by !== userId ? [actual.created_by] : []),
+    ...almacenIds,
+    ...adminIds,
+  ].filter((id) => id !== userId);
+
+  const resumen = eventos.map((e) => CAMPO_LABEL[e.campo] ?? e.campo).join(", ");
+  await notify(destinatarios, {
+    tipo: "orden_editada",
+    titulo: "Orden modificada",
+    mensaje: `#${actual.numero_pedido} — se corrigió: ${resumen}.`,
+    orderId,
+  });
+
+  revalidatePath(`/ordenes/${orderId}`);
+  revalidatePath("/ordenes");
+  return { ok: true };
+}
+
+/**
+ * Almacén parte una orden en varios envíos ANTES de despacharla: una cotización
+ * de 10 ítems puede salir en varias guías de remisión porque no hay stock de
+ * todo o no entra en un viaje. Crea la orden del resto (sufijo -E) y deja la
+ * original siguiendo su curso normal — el repartidor entrega lo que le dan y la
+ * cierra como Completa, sin enterarse de nada.
+ *
+ * Es distinto del remanente (-R), que nace de un error detectado en el punto de
+ * entrega. Separarlos permite medir cuántas veces se falla de verdad.
+ */
+export async function dividirEnvio(
+  _prev: FormResult,
+  formData: FormData
+): Promise<FormResult> {
+  await requireRole(["almacen", "admin"]);
+
+  const orderId = String(formData.get("order_id") ?? "");
+  const nota = String(formData.get("nota_pendiente") ?? "").trim();
+
+  if (!orderId) return { error: "Orden inválida." };
+  if (!nota) return { error: "Escribe qué queda pendiente para el siguiente envío." };
+
+  const supabase = await createClient();
+
+  const { data: padre } = await supabase
+    .from("orders")
+    .select("id, numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, tipo, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by, estado")
+    .eq("id", orderId)
+    .single();
+  if (!padre) return { error: "Orden inválida." };
+  if (padre.estado === "completado")
+    return { error: "Esta orden ya se cerró; no se puede dividir." };
+
+  const hija = await crearOrdenHija(supabase, padre, "envio", nota);
+  if ("error" in hija) return { error: hija.error };
+
+  await registrarEvento(supabase, orderId, "dividida", `${nota} → #${hija.numero}`);
+  await registrarEvento(supabase, hija.id, "creada", `Resto de #${padre.numero_pedido}`);
+
+  const almacenIds = await userIdsByRole("almacen");
+  await notify([...almacenIds, ...(padre.created_by ? [padre.created_by] : [])], {
+    tipo: "orden_pendiente",
+    titulo: "Envío dividido",
+    mensaje: `#${padre.numero_pedido} se despacha en partes — queda pendiente #${hija.numero}.`,
+    orderId: hija.id,
+  });
+
+  revalidatePath(`/ordenes/${orderId}`);
+  revalidatePath(`/ordenes/${hija.id}`);
+  revalidatePath("/ordenes");
+  redirect(`/ordenes/${orderId}`);
+}
+
 /** Sube una o más fotos de la guía/comprobante y marca la orden como
  *  completada (total o parcial). Repartidor: solo sus órdenes propias.
- *  Almacén/Admin: cualquiera (oficina/courier). */
+ *  Almacén/Admin: cualquiera (oficina/courier). Si la orden ya venía "En
+ *  Tránsito", la guía se subió al recoger, así que acá la foto es opcional
+ *  (quien verifica puede sumar otra si quiere, no reemplaza la anterior). */
 export async function completeOrder(
   _prev: FormResult,
   formData: FormData
@@ -199,72 +647,101 @@ export async function completeOrder(
   const orderId = String(formData.get("order_id") ?? "");
   const parcial = String(formData.get("entrega_parcial") ?? "") === "true";
   const notaFaltante = String(formData.get("nota_faltante") ?? "").trim();
+  const numeroGuiaInput = String(formData.get("numero_guia") ?? "").trim();
   const guias = formData.getAll("guias").filter((f): f is File => f instanceof File && f.size > 0);
+  const material = formData.getAll("material").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!orderId) return { error: "Orden inválida." };
-  if (guias.length === 0)
-    return { error: "Toma al menos una foto de la guía antes de confirmar." };
   if (parcial && !notaFaltante)
     return { error: "Cuéntanos qué falta completar." };
 
   const supabase = await createClient();
-  const { urls, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
-  if (upErr) return { error: "No se pudo subir la foto: " + upErr };
 
-  const { data: updated, error } = await supabase
+  const { data: actual } = await supabase
+    .from("orders")
+    .select("id, estado, guias_urls, guia_url, numero_guia, material_urls, numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, tipo, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by")
+    .eq("id", orderId)
+    .single();
+  if (!actual) return { error: "Orden inválida." };
+  if (actual.estado === "completado")
+    return { error: "Esta orden ya fue cerrada por otra persona." };
+
+  const guiasPrevias: string[] = actual.guias_urls?.length
+    ? actual.guias_urls
+    : actual.guia_url
+      ? [actual.guia_url]
+      : [];
+
+  if (guias.length === 0 && guiasPrevias.length === 0)
+    return { error: "Toma al menos una foto de la guía antes de confirmar." };
+
+  // El número de guía se pide una sola vez: si ya se escribió en el paso de
+  // recojo (marcarEnTransito), acá es opcional (solo se usa para corregirlo).
+  // Si esta orden nunca pasó por ese paso (entrega directa), sí es obligatorio.
+  const numeroGuia = numeroGuiaInput || actual.numero_guia;
+  if (!numeroGuia) return { error: "Ingresa el número de guía (escrito a mano)." };
+
+  let urls = guiasPrevias;
+  if (guias.length > 0) {
+    const { urls: nuevas, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
+    if (upErr) return { error: "No se pudo subir la foto: " + upErr };
+    urls = [...guiasPrevias, ...nuevas];
+  }
+
+  let materialUrls = actual.material_urls ?? [];
+  if (material.length > 0) {
+    const { urls: nuevasMaterial, error: matErr } = await uploadMany(
+      supabase,
+      "guias",
+      `${orderId}/material`,
+      material
+    );
+    if (matErr) return { error: "No se pudo subir la foto del material: " + matErr };
+    materialUrls = [...materialUrls, ...nuevasMaterial];
+  }
+
+  // Backorder: si quedó parcial, se crea un pedido nuevo solo por lo que falta
+  // (mismo patrón que usa Odoo) — el original queda como registro histórico de
+  // lo que sí se entregó, y el remanente arranca de "pendiente" para que
+  // almacén lo asigne.
+  //
+  // Se crea ANTES de cerrar el padre a propósito: si el remanente falla (número
+  // ocupado, permisos), se aborta sin haber cerrado nada. Al revés, la orden
+  // quedaba cerrada como parcial y el remanente se perdía en silencio.
+  let backorderId: string | null = null;
+  if (parcial) {
+    const hija = await crearOrdenHija(supabase, actual, "remanente", notaFaltante);
+    if ("error" in hija) {
+      console.error("No se pudo crear el remanente:", hija.error, { orderId });
+      return { error: `No se pudo crear el pedido con lo que falta: ${hija.error}` };
+    }
+    backorderId = hija.id;
+  }
+
+  const { error } = await supabase
     .from("orders")
     .update({
       guia_url: urls[0] ?? null,
       guias_urls: urls,
+      numero_guia: numeroGuia,
+      material_urls: materialUrls,
       entrega_parcial: parcial,
       estado: "completado",
       completed_at: new Date().toISOString(),
     })
-    .eq("id", orderId)
-    .select(
-      "numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, tipo, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by"
-    )
-    .single();
+    .eq("id", orderId);
   if (error) return { error: error.message };
 
-  let backorderId: string | null = null;
+  const updated = actual;
 
-  // Backorder: si quedó parcial, se crea automáticamente un pedido nuevo
-  // solo por lo que falta (mismo patrón que usa Odoo para entregas
-  // parciales) — el original queda como registro histórico intacto de
-  // lo que sí se completó, y el remanente sigue su propio flujo desde
-  // "pendiente" para que almacén lo asigne cuando corresponda.
-  if (parcial && updated) {
-    const { count } = await supabase
-      .from("orders")
-      .select("id", { count: "exact", head: true })
-      .eq("parent_order_id", orderId);
-    const sufijo = `-R${(count ?? 0) + 1}`;
+  await registrarEvento(
+    supabase,
+    orderId,
+    parcial ? "parcial" : "completada",
+    parcial ? notaFaltante : null
+  );
 
-    const { data: backorder, error: boErr } = await supabase
-      .from("orders")
-      .insert({
-        numero_pedido: `${updated.numero_pedido}${sufijo}`,
-        cliente: updated.cliente,
-        proyecto: updated.proyecto,
-        proveedor: updated.proveedor,
-        numero_pedido_compra: updated.numero_pedido_compra,
-        tipo: updated.tipo,
-        modalidad: updated.modalidad,
-        courier_tracking: updated.courier_tracking,
-        imagen_url: updated.imagen_url,
-        imagenes_urls: updated.imagenes_urls,
-        nota: notaFaltante,
-        created_by: updated.created_by,
-        parent_order_id: orderId,
-        estado: "pendiente",
-      })
-      .select("id")
-      .single();
-    if (!boErr && backorder) backorderId = backorder.id;
-  }
-
-  if (updated?.created_by) {
+  if (updated.created_by) {
     await notify([updated.created_by], {
       tipo: parcial ? "orden_parcial" : "orden_completada",
       titulo: parcial ? "Orden completada parcialmente" : "Orden completada",
@@ -280,7 +757,7 @@ export async function completeOrder(
     await notify(almacenIds, {
       tipo: "orden_pendiente",
       titulo: "Pedido pendiente por entrega parcial",
-      mensaje: `#${updated!.numero_pedido} quedó parcial — falta asignar el remanente.`,
+      mensaje: `#${updated.numero_pedido} quedó parcial — falta asignar el remanente.`,
       orderId: backorderId,
     });
   }
@@ -291,26 +768,79 @@ export async function completeOrder(
   redirect("/ordenes");
 }
 
-/** Admin elimina una orden. */
-export async function deleteOrder(formData: FormData): Promise<void> {
-  await requireRole(["admin"]);
+/**
+ * Elimina una orden. Solo Ventas y Admin: el resto de roles (almacén,
+ * repartidor) trabajan sobre la orden pero no son dueños del registro, así que
+ * no tienen por qué borrarlo.
+ *
+ * Ventas solo puede borrar mientras la orden siga Pendiente — igual que para
+ * corregirla. Una vez que almacén la tomó ya hay trabajo hecho encima
+ * (asignación, guías, historial) y borrarla se lo lleva puesto; a partir de
+ * ahí solo Admin. Bloqueada también si tiene hijas (remanente o envío
+ * dividido): borrarla dejaría esos enlaces cruzados apuntando a un id
+ * inexistente y el hilo de la familia se pierde.
+ */
+export async function deleteOrder(_prev: FormResult, formData: FormData): Promise<FormResult> {
+  const { profile } = await requireRole(["admin", "vendedor"]);
   const orderId = String(formData.get("order_id") ?? "");
-  if (!orderId) return;
+  if (!orderId) return { error: "Orden inválida." };
 
   const supabase = await createClient();
-  await supabase.from("orders").delete().eq("id", orderId);
+
+  const { data: actual } = await supabase
+    .from("orders")
+    .select("estado")
+    .eq("id", orderId)
+    .single();
+  if (!actual) return { error: "Orden inválida." };
+
+  if (profile.role === "vendedor" && actual.estado !== "pendiente") {
+    return {
+      error: "Esta orden ya está en curso; para eliminarla ahora habla con un administrador.",
+    };
+  }
+
+  const { data: hijos } = await supabase
+    .from("orders")
+    .select("id")
+    .eq("parent_order_id", orderId)
+    .limit(1);
+  if (hijos && hijos.length > 0) {
+    return {
+      error: "Esta orden tiene una división (remanente o envío) enlazada; no se puede eliminar.",
+    };
+  }
+
+  // `.select()` para detectar el caso en que RLS descarte la fila: PostgREST
+  // devuelve cero filas SIN error, y la acción reportaría un borrado que
+  // nunca ocurrió.
+  const { data: borrada, error } = await supabase
+    .from("orders")
+    .delete()
+    .eq("id", orderId)
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!borrada) return { error: "No tienes permiso para eliminar esta orden." };
 
   revalidatePath("/ordenes");
   redirect("/ordenes");
 }
 
 /**
- * Quita un PDF/imagen adjunto a la orden (no la orden completa — eso
- * sigue siendo solo para admin, ver `deleteOrder`). RLS deja hacer esto
- * a admin/almacén, al repartidor asignado, o a quien creó la orden.
+ * Quita un PDF/imagen adjunto a la orden (no la orden completa — eso es
+ * `deleteOrder`).
+ *
+ * Solo Ventas y Admin: el documento de la cotización/pedido lo carga Ventas
+ * al crear la orden y es la referencia con la que todos los demás trabajan.
+ * Almacén y el repartidor lo necesitan para despachar, no para editarlo — y
+ * teniendo la "×" a mano era cuestión de tiempo que alguien la tocara sin
+ * querer. Ventas, además, solo mientras la orden siga Pendiente (mismo
+ * límite que para corregir los datos; la base también lo exige, ver
+ * 30_vendedor_adjuntos.sql).
  */
 export async function eliminarAdjunto(formData: FormData): Promise<void> {
-  await requireRole(["admin", "vendedor", "almacen", "repartidor"]);
+  const { profile } = await requireRole(["admin", "vendedor"]);
 
   const orderId = String(formData.get("order_id") ?? "");
   const url = String(formData.get("url") ?? "");
@@ -319,10 +849,11 @@ export async function eliminarAdjunto(formData: FormData): Promise<void> {
   const supabase = await createClient();
   const { data: order } = await supabase
     .from("orders")
-    .select("imagen_url, imagenes_urls")
+    .select("imagen_url, imagenes_urls, estado")
     .eq("id", orderId)
     .single();
   if (!order) return;
+  if (profile.role === "vendedor" && order.estado !== "pendiente") return;
 
   const restantes = (order.imagenes_urls ?? []).filter((u: string) => u !== url);
   await supabase
@@ -333,12 +864,27 @@ export async function eliminarAdjunto(formData: FormData): Promise<void> {
   // Borrar el archivo real del storage es "mejor esfuerzo": si falla (ya
   // no existe, o la URL no calza con el patrón esperado) no bloqueamos
   // la operación — lo importante es que ya no aparezca en la orden.
+  //
+  // crearOrdenHija() copia imagen_url/imagenes_urls del padre a la hija, así
+  // que la misma URL de storage puede estar referenciada por más de una
+  // orden. Antes de borrar el archivo físico hay que confirmar que ninguna
+  // OTRA orden la sigue usando — si no, una división borraría en cascada la
+  // foto que el padre (o una hija hermana) todavía necesita mostrar.
   const marker = "/object/public/ordenes/";
   const idx = url.indexOf(marker);
   if (idx !== -1) {
-    const path = url.slice(idx + marker.length).split("?")[0];
-    await supabase.storage.from("ordenes").remove([path]);
+    const [{ data: porUnica }, { data: porArreglo }] = await Promise.all([
+      supabase.from("orders").select("id").neq("id", orderId).eq("imagen_url", url).limit(1),
+      supabase.from("orders").select("id").neq("id", orderId).contains("imagenes_urls", [url]).limit(1),
+    ]);
+    const compartida = (porUnica?.length ?? 0) > 0 || (porArreglo?.length ?? 0) > 0;
+    if (!compartida) {
+      const path = url.slice(idx + marker.length).split("?")[0];
+      await supabase.storage.from("ordenes").remove([path]);
+    }
   }
+
+  await registrarEvento(supabase, orderId, "adjunto_eliminado");
 
   revalidatePath(`/ordenes/${orderId}`);
   revalidatePath("/ordenes");

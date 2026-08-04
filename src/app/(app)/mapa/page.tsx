@@ -17,7 +17,9 @@ type LocRow = {
 type OrdRow = { numero_pedido: string; tipo: OrderType; assigned_to: string | null };
 
 export default async function MapaPage() {
-  await requireRole(["admin", "almacen", "vendedor"]);
+  // El repartidor también entra: ver dónde están los demás le sirve para
+  // coordinar un apoyo o un cruce de ruta sin tener que llamar a almacén.
+  await requireRole(["admin", "almacen", "vendedor", "repartidor"]);
   const supabase = await createClient();
 
   const [{ data: locs }, { data: ords }] = await Promise.all([
@@ -27,7 +29,9 @@ export default async function MapaPage() {
     supabase
       .from("orders")
       .select("numero_pedido, tipo, assigned_to")
-      .eq("estado", "asignado"),
+      // "en_transito" también: el material ya recogido va literalmente en el
+      // vehículo del repartidor, así que cuenta como carga suya en el mapa.
+      .in("estado", ["asignado", "en_transito"]),
   ]);
 
   const locations = (locs ?? []) as unknown as LocRow[];

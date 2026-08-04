@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   Home,
   PackagePlus,
@@ -10,6 +10,9 @@ import {
   BarChart3,
   Users,
   KeyRound,
+  ListTodo,
+  Truck,
+  CheckCircle2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -24,6 +27,9 @@ const ICONS: Record<string, LucideIcon> = {
   "bar-chart": BarChart3,
   users: Users,
   "key-round": KeyRound,
+  "list-todo": ListTodo,
+  truck: Truck,
+  "check-circle": CheckCircle2,
 };
 
 export type NavEntry = {
@@ -34,14 +40,35 @@ export type NavEntry = {
   icon: keyof typeof ICONS;
 };
 
-/** Devuelve el href del item activo: el prefijo más largo que calza con la ruta. */
+/**
+ * Devuelve el href del item activo: el prefijo más largo que calza con la ruta.
+ *
+ * Los items pueden traer querystring (las pestañas del repartidor son todas
+ * `/ordenes?panel=...`). Si solo se comparara la ruta, las tres se verían
+ * activas a la vez, así que también tienen que calzar sus parámetros. El
+ * desempate por largo hace que la pestaña por defecto (`/ordenes`, sin
+ * parámetros) ceda ante la específica cuando ambas calzan.
+ */
 function useActiveHref(items: NavEntry[]) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   let best = "";
   for (const i of items) {
-    const match =
-      pathname === i.href || (i.href !== "/" && pathname.startsWith(i.href + "/"));
-    if (match && i.href.length > best.length) best = i.href;
+    const [path, query] = i.href.split("?");
+    const matchPath = pathname === path || (path !== "/" && pathname.startsWith(path + "/"));
+    if (!matchPath) continue;
+    if (query) {
+      const esperado = new URLSearchParams(query);
+      let calza = true;
+      for (const [clave, valor] of esperado) {
+        if (searchParams.get(clave) !== valor) {
+          calza = false;
+          break;
+        }
+      }
+      if (!calza) continue;
+    }
+    if (i.href.length > best.length) best = i.href;
   }
   return best;
 }

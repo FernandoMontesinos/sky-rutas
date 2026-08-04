@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, Search } from "lucide-react";
+import { ChevronDown, Download, FileArchive, Search } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge, TypeBadge } from "@/components/badges";
@@ -42,6 +42,7 @@ export default async function ReportesPage({
     { label: "Total", value: totales.total, tone: "bg-gray-100 text-gray-800" },
     { label: "Pendientes", value: totales.pendientes, tone: "bg-gray-100 text-gray-700" },
     { label: "Asignadas", value: totales.asignadas, tone: "bg-amber-50 text-amber-800" },
+    { label: "En Tránsito", value: totales.enTransito, tone: "bg-sky-50 text-sky-800" },
     { label: "Completadas", value: totales.completadas, tone: "bg-green-50 text-green-800" },
     { label: "Parciales", value: totales.parciales, tone: "bg-orange-50 text-orange-800" },
   ];
@@ -98,6 +99,7 @@ export default async function ReportesPage({
               <option value="">Todos</option>
               <option value="pendiente">Pendiente</option>
               <option value="asignado">Asignado</option>
+              <option value="en_transito">En Tránsito</option>
               <option value="completado">Completado</option>
             </select>
           </div>
@@ -193,16 +195,51 @@ export default async function ReportesPage({
           </Link>
 
           <a
-            href={`/api/export?${filtrosAQuery(filtros)}`}
-            className="flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 sm:ml-auto"
+            href={`/api/export-guias?${filtrosAQuery(filtros)}`}
+            className="flex items-center gap-1.5 rounded-lg bg-sky-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-800 sm:ml-auto"
           >
-            <Download className="h-4 w-4" strokeWidth={2.25} />
-            Exportar a Excel
+            <FileArchive className="h-4 w-4" strokeWidth={2.25} />
+            Descargar guías (ZIP)
           </a>
+
+          {/*
+            Desplegable en <details> en vez de un menú con JavaScript: la
+            pantalla entera es un form GET que funciona sin JS, y no hay
+            razón para que el botón de exportar sea la excepción. Excel va
+            primero porque es lo que se usa siempre; CSV es para cuando hay
+            que meter la data en otro sistema.
+          */}
+          <details className="relative">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700">
+              <Download className="h-4 w-4" strokeWidth={2.25} />
+              Exportar
+              <ChevronDown className="h-3.5 w-3.5" strokeWidth={2.5} />
+            </summary>
+            <div className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+              <a
+                href={`/api/export?${filtrosAQuery(filtros)}`}
+                className="block px-3 py-2.5 text-sm transition hover:bg-gray-50"
+              >
+                <span className="font-semibold text-gray-800">Excel (.xlsx)</span>
+                <span className="block text-xs text-gray-500">
+                  Dos hojas: Cotizaciones y Pedidos
+                </span>
+              </a>
+              <a
+                href={`/api/export?formato=csv&${filtrosAQuery(filtros)}`}
+                className="block border-t border-gray-100 px-3 py-2.5 text-sm transition hover:bg-gray-50"
+              >
+                <span className="font-semibold text-gray-800">CSV (.csv)</span>
+                <span className="block text-xs text-gray-500">
+                  Una sola tabla, con columna Tipo
+                </span>
+              </a>
+            </div>
+          </details>
         </div>
       </form>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {tarjetas.map((c) => (
           <div key={c.label} className={`rounded-2xl p-4 ${c.tone}`}>
             <div className="text-2xl font-black tabular-nums">{c.value}</div>

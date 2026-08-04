@@ -11,12 +11,37 @@ import { signOut } from "./actions";
 type NavItem = NavEntry & { roles: UserRole[] };
 
 const NAV: NavItem[] = [
-  { href: "/", label: "Inicio", icon: "home", roles: ["admin", "vendedor", "almacen", "repartidor"] },
+  // Inicio no aplica al repartidor: su pantalla es la lista de órdenes y la
+  // home lo redirige ahí (ver app/(app)/page.tsx).
+  { href: "/", label: "Inicio", icon: "home", roles: ["admin", "vendedor", "almacen"] },
   { href: "/ordenes/nueva", label: "Nueva orden", short: "Nueva", icon: "package-plus", roles: ["admin", "vendedor"] },
-  { href: "/ordenes", label: "Órdenes", icon: "clipboard-list", roles: ["admin", "vendedor", "almacen", "repartidor"] },
+  { href: "/ordenes", label: "Órdenes", icon: "clipboard-list", roles: ["admin", "vendedor", "almacen"] },
   { href: "/mapa", label: "Mapa", icon: "map", roles: ["admin", "almacen", "vendedor"] },
   { href: "/reportes", label: "Reportes", icon: "bar-chart", roles: ["admin", "almacen"] },
   { href: "/admin/usuarios", label: "Usuarios", icon: "users", roles: ["admin"] },
+];
+
+/**
+ * El repartidor tiene su propia barra. Los demás roles gestionan desde un
+ * escritorio y les sirve ver el tablero entero de un vistazo; él trabaja en la
+ * calle, en movimiento y con una mano, y una sola pantalla con las tres etapas
+ * apiladas lo obliga a scrollear para saber qué le queda por hacer.
+ *
+ * Cada etapa de su día pasa a ser una pestaña, y la barra inferior —que antes
+ * tenía una única entrada "Órdenes", desaprovechada— se vuelve el control
+ * principal. La primera no lleva parámetro para que `/ordenes` a secas caiga
+ * ahí (ver useActiveHref en app-nav.tsx).
+ */
+const NAV_REPARTIDOR: NavEntry[] = [
+  { href: "/ordenes", label: "Por hacer", icon: "list-todo" },
+  {
+    href: "/ordenes?panel=recogidas",
+    label: "Recogidas (por cerrar)",
+    short: "Recogidas",
+    icon: "truck",
+  },
+  { href: "/ordenes?panel=completadas", label: "Completadas", short: "Listas", icon: "check-circle" },
+  { href: "/mapa", label: "Mapa", icon: "map" },
 ];
 
 export default async function AppLayout({
@@ -25,7 +50,10 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const { userId, profile } = await requireUser();
-  const items = NAV.filter((i) => i.roles.includes(profile.role));
+  const items =
+    profile.role === "repartidor"
+      ? NAV_REPARTIDOR
+      : NAV.filter((i) => i.roles.includes(profile.role));
 
   return (
     <div className="flex min-h-screen flex-col">

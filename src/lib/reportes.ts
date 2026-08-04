@@ -1,5 +1,5 @@
 import type { createClient } from "@/lib/supabase/server";
-import type { Modalidad, OrderStatus, OrderType } from "@/lib/types";
+import type { DivisionTipo, Modalidad, OrderStatus, OrderType } from "@/lib/types";
 
 /**
  * Filtros del módulo de Reportes, compartidos entre la página y el export
@@ -41,10 +41,15 @@ export type ReporteRow = {
   modalidad: Modalidad;
   courier_tracking: string | null;
   entrega_parcial: boolean;
+  no_recogido_intentos: number;
+  no_recogido_motivo: string | null;
   parent_order_id: string | null;
+  division_tipo: DivisionTipo | null;
+  numero_guia: string | null;
   nota: string | null;
   created_at: string;
   assigned_at: string | null;
+  en_transito_at: string | null;
   completed_at: string | null;
   imagen_url: string | null;
   imagenes_urls: string[] | null;
@@ -54,14 +59,15 @@ export type ReporteRow = {
 
 export const SELECT_REPORTE =
   "id, numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, tipo, estado, modalidad, " +
-  "courier_tracking, entrega_parcial, parent_order_id, nota, created_at, assigned_at, completed_at, " +
+  "courier_tracking, entrega_parcial, no_recogido_intentos, no_recogido_motivo, " +
+  "parent_order_id, division_tipo, numero_guia, nota, created_at, assigned_at, en_transito_at, completed_at, " +
   "imagen_url, imagenes_urls, " +
   "creador:profiles!orders_created_by_fkey(full_name), repartidor:profiles!orders_assigned_to_fkey(full_name)";
 
 /** Tope de filas por consulta: el rango de fechas ya acota, esto es solo red de seguridad. */
 export const LIMITE_FILAS = 5000;
 
-const ESTADOS: OrderStatus[] = ["pendiente", "asignado", "completado"];
+const ESTADOS: OrderStatus[] = ["pendiente", "asignado", "en_transito", "completado"];
 const TIPOS: OrderType[] = ["entrega", "recojo"];
 
 /** Fecha en formato YYYY-MM-DD según el reloj de Lima. */
@@ -87,7 +93,7 @@ export function campoFecha(eje: EjeFecha) {
  * comas y paréntesis como separadores, así que un cliente con coma en el
  * nombre rompería la consulta si se pasara tal cual.
  */
-function limpiarBusqueda(q: string) {
+export function limpiarBusqueda(q: string) {
   return q.replace(/[,()*%\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
 }
 
@@ -130,16 +136,22 @@ export function filtrosAQuery(f: ReporteFiltros) {
   return p.toString();
 }
 
-/** Consulta de órdenes ya filtrada y ordenada (más reciente primero). */
+/**
+ * Consulta de órdenes ya filtrada y ordenada (más reciente primero).
+ * `select` es sobreescribible para reusar los mismos filtros con otras
+ * columnas (ej. /api/export-guias necesita guia_url/numero_guia, no las
+ * columnas del Excel) sin duplicar la lógica de filtros en dos lugares.
+ */
 export function construirConsulta(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  f: ReporteFiltros
+  f: ReporteFiltros,
+  select: string = SELECT_REPORTE
 ) {
   const campo = campoFecha(f.eje);
 
   let query = supabase
     .from("orders")
-    .select(SELECT_REPORTE)
+    .select(select)
     .gte(campo, `${f.desde}T00:00:00${OFFSET_LIMA}`)
     .lte(campo, `${f.hasta}T23:59:59${OFFSET_LIMA}`);
 
@@ -163,6 +175,7 @@ export function resumen(rows: ReporteRow[]) {
     total: rows.length,
     pendientes: rows.filter((r) => r.estado === "pendiente").length,
     asignadas: rows.filter((r) => r.estado === "asignado").length,
+    enTransito: rows.filter((r) => r.estado === "en_transito").length,
     completadas: rows.filter((r) => r.estado === "completado").length,
     parciales: rows.filter((r) => r.entrega_parcial).length,
   };
