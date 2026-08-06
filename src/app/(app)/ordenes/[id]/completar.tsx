@@ -1,12 +1,11 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, startTransition } from "react";
+import { useActionState, useState, startTransition } from "react";
 import {
   CheckCircle2,
   AlertTriangle,
   Camera,
   FileText,
-  ScanText,
   Truck,
   PackageX,
 } from "lucide-react";
@@ -17,60 +16,7 @@ import {
   type FormResult,
 } from "../actions";
 import { MultiImagePicker, type PickedImage } from "@/components/multi-image-picker";
-import { reconocerNumeroGuia } from "@/lib/ocr-guia";
 import { TYPE_LABEL, type OrderType } from "@/lib/types";
-
-type OcrEstado = "idle" | "leyendo" | "detectado" | "no-detectado";
-
-/**
- * Corre OCR sobre la primera foto de guía apenas se agrega, y solo si el
- * campo sigue vacío — nunca pisa algo que la persona ya escribió a mano.
- * El resultado sigue siendo editable: esto es una ayuda, no la fuente de
- * verdad (ver ocr-guia.ts).
- */
-function useOcrNumeroGuia(
-  images: PickedImage[],
-  numeroGuia: string,
-  setNumeroGuia: (v: string) => void
-) {
-  const [ocrEstado, setOcrEstado] = useState<OcrEstado>("idle");
-  // El OCR tarda unos segundos: si la persona ya empezó a tipear el número
-  // a mano mientras tanto, el resultado (que puede venir mal leído, ver
-  // ocr-guia.ts) no debe pisarle lo que escribió. useRef en vez del valor
-  // de la clausura porque el efecto no puede depender de numeroGuia sin
-  // relanzar el OCR en cada letra.
-  const numeroGuiaRef = useRef(numeroGuia);
-  useEffect(() => {
-    numeroGuiaRef.current = numeroGuia;
-  }, [numeroGuia]);
-
-  useEffect(() => {
-    if (images.length === 0 || numeroGuiaRef.current.trim().length > 0) return;
-    let cancelado = false;
-
-    async function leer() {
-      setOcrEstado("leyendo");
-      const detectado = await reconocerNumeroGuia(images[0].file);
-      if (cancelado || numeroGuiaRef.current.trim().length > 0) return;
-      if (detectado) {
-        setNumeroGuia(detectado);
-        setOcrEstado("detectado");
-      } else {
-        setOcrEstado("no-detectado");
-      }
-    }
-    leer();
-
-    return () => {
-      cancelado = true;
-    };
-    // Se dispara solo cuando cambia la lista de fotos: si se incluyera
-    // numeroGuia acá, cada letra tipeada relanzaría el OCR.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [images]);
-
-  return ocrEstado;
-}
 
 function esPdf(url: string) {
   return url.split("?")[0].toLowerCase().endsWith(".pdf");
@@ -134,24 +80,6 @@ function GuiaRegistrada({
   );
 }
 
-function OcrHint({ estado }: { estado: OcrEstado }) {
-  if (estado === "leyendo")
-    return (
-      <p className="mt-1 flex items-center gap-1 text-xs text-gray-400">
-        <ScanText className="h-3.5 w-3.5" strokeWidth={2} />
-        Leyendo el número de guía de la foto...
-      </p>
-    );
-  if (estado === "detectado")
-    return (
-      <p className="mt-1 flex items-center gap-1 text-xs text-sky-700">
-        <ScanText className="h-3.5 w-3.5" strokeWidth={2} />
-        Detectado automáticamente — verifica que esté bien.
-      </p>
-    );
-  return null;
-}
-
 /**
  * Paso 1 de un Pedido (Proveedor): el repartidor confirma que recogió el
  * material. A propósito NO se le pregunta completa/parcial — él recibe bultos
@@ -190,7 +118,13 @@ export function RecojoForm({ orderId }: { orderId: string }) {
         Foto(s) del material recogido
       </h2>
 
-      <MultiImagePicker label="" images={materialImages} onChange={setMaterialImages} />
+      <MultiImagePicker
+        label=""
+        images={materialImages}
+        onChange={setMaterialImages}
+        soloCamara
+        tituloBoton="Foto Material"
+      />
 
       <div>
         <label htmlFor="obs_recojo" className="mb-1 block text-xs font-medium text-gray-700">
@@ -331,7 +265,6 @@ export default function CompletarForm({
   const [faltante, setFaltante] = useState("");
   const [observaciones, setObservaciones] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
-  const ocrEstado = useOcrNumeroGuia(images, numeroGuia, setNumeroGuia);
 
   // La guía de remisión la emite SkyHigh y solo aplica a clientes; la del
   // proveedor no se registra nunca. En un Pedido, entonces, la constancia es
@@ -387,7 +320,13 @@ export default function CompletarForm({
       <span className="mb-1 block text-xs font-medium text-gray-700">
         Foto(s) del material{pideGuia ? " (opcional)" : ""}
       </span>
-      <MultiImagePicker label="" images={materialImages} onChange={setMaterialImages} />
+      <MultiImagePicker
+        label=""
+        images={materialImages}
+        onChange={setMaterialImages}
+        soloCamara
+        tituloBoton="Foto Material"
+      />
     </div>
   );
 
@@ -400,7 +339,13 @@ export default function CompletarForm({
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <span className="mb-1 block text-xs font-medium text-gray-700">Foto(s) de la guía</span>
-          <MultiImagePicker label="" images={images} onChange={setImages} />
+          <MultiImagePicker
+            label=""
+            images={images}
+            onChange={setImages}
+            soloCamara
+            tituloBoton="Foto Guía"
+          />
         </div>
         {selectorMaterial}
       </div>
@@ -417,7 +362,6 @@ export default function CompletarForm({
           placeholder="Ej. T002-0001"
           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
         />
-        <OcrHint estado={ocrEstado} />
       </div>
     </>
   ) : (
