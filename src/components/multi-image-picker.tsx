@@ -16,17 +16,30 @@ function esArchivoValido(f: File) {
  * celular ofrece botones directos de cámara/galería; en PC además admite
  * pegar con Ctrl+V. Cada imagen se comprime antes de agregarse a la lista
  * (ver lib/compress-image.ts); los PDF se suben sin tocar.
+ *
+ * `soloCamara` quita la opción de elegir de galería solo en CELULAR — para
+ * las fotos de guía y material, que son evidencia del momento (recojo o
+ * entrega): una foto de galería podría ser vieja, de otra orden, o ni
+ * siquiera propia. En PC se deja el comportamiento normal (adjuntar una
+ * imagen o PDF ya existente): ahí no hay cámara del celular de por medio, y
+ * quien cierra una orden desde su computadora sí necesita poder adjuntar un
+ * archivo.
  */
 export function MultiImagePicker({
   label,
   images,
   onChange,
   allowPaste = false,
+  soloCamara = false,
+  tituloBoton,
 }: {
   label: string;
   images: PickedImage[];
   onChange: (images: PickedImage[]) => void;
   allowPaste?: boolean;
+  soloCamara?: boolean;
+  /** Reemplaza el texto genérico del botón de cámara (ej. "Foto Guía"). */
+  tituloBoton?: string;
 }) {
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -109,29 +122,34 @@ export function MultiImagePicker({
         </div>
       )}
 
-      {/* Celular: cámara o galería */}
-      <div className="grid grid-cols-2 gap-3 sm:hidden">
+      {/* Celular: cámara siempre; galería solo si no es soloCamara */}
+      <div className={soloCamara ? "sm:hidden" : "grid grid-cols-2 gap-3 sm:hidden"}>
         <button
           type="button"
           onClick={() => cameraRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-5 text-center text-gray-600 transition active:scale-95 active:border-brand active:text-brand"
+          className="flex w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-5 text-center text-gray-600 transition active:scale-95 active:border-brand active:text-brand"
         >
           <Camera className="h-7 w-7" strokeWidth={1.75} />
-          <span className="text-sm font-semibold">Tomar foto</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => galleryRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-5 text-center text-gray-600 transition active:scale-95 active:border-brand active:text-brand"
-        >
-          <ImagePlus className="h-7 w-7" strokeWidth={1.75} />
           <span className="text-sm font-semibold">
-            {images.length > 0 ? "Agregar otra" : "Elegir imagen o PDF"}
+            {tituloBoton ?? (images.length > 0 ? "Agregar otra" : "Tomar foto")}
           </span>
         </button>
+        {!soloCamara && (
+          <button
+            type="button"
+            onClick={() => galleryRef.current?.click()}
+            className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-5 text-center text-gray-600 transition active:scale-95 active:border-brand active:text-brand"
+          >
+            <ImagePlus className="h-7 w-7" strokeWidth={1.75} />
+            <span className="text-sm font-semibold">
+              {images.length > 0 ? "Agregar otra" : "Elegir imagen o PDF"}
+            </span>
+          </button>
+        )}
       </div>
 
-      {/* PC/tablet: pegar o elegir */}
+      {/* PC/tablet: siempre puede adjuntar (imagen o PDF), sin cámara de por
+          medio — soloCamara no aplica acá a propósito. */}
       <button
         type="button"
         onClick={() => galleryRef.current?.click()}
@@ -139,7 +157,8 @@ export function MultiImagePicker({
       >
         <ClipboardPaste className="h-7 w-7" strokeWidth={1.75} />
         <span className="font-medium">
-          {allowPaste ? "Pega una imagen o PDF aquí (Ctrl + V)" : "Toca para elegir imagen o PDF"}
+          {tituloBoton ??
+            (allowPaste ? "Pega una imagen o PDF aquí (Ctrl + V)" : "Toca para elegir imagen o PDF")}
         </span>
         <span className="text-sm">
           {images.length > 0 ? "o haz clic para agregar otra" : "o haz clic para elegir un archivo"}

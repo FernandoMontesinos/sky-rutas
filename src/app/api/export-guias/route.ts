@@ -128,7 +128,13 @@ export async function GET(request: NextRequest) {
     const material = f.material_urls ?? [];
     if (guias.length === 0 && material.length === 0) continue;
 
-    const carpeta = `${sanear(f.numero_pedido)}_${sanear(f.numero_guia ?? "sin-guia")}`;
+    // Un Pedido nunca tiene N° de guía (la emite SkyHigh y solo aplica a
+    // clientes), así que ahí la carpeta va solo con el N° de pedido — un
+    // sufijo "sin-guia" se leería como un dato faltante, y no lo es.
+    const carpeta =
+      f.tipo === "recojo"
+        ? sanear(f.numero_pedido)
+        : `${sanear(f.numero_pedido)}_${sanear(f.numero_guia ?? "sin-guia")}`;
     guias.forEach((url, i) =>
       archivos.push({ url, ruta: `${carpeta}/guia-${i + 1}.${extDeUrl(url)}` })
     );

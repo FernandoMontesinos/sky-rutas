@@ -34,10 +34,6 @@ const BASE_INICIO: Columna[] = [
  * fallaron — justo el dato que se quiere medir.
  */
 const BASE_FIN: Columna[] = [
-  // El N° de guía es el puente con la descarga de guías: es el nombre de la
-  // carpeta dentro del ZIP, así que desde una fila del Excel se llega a sus
-  // fotos sin tener que adivinar.
-  { header: "N° de guía", width: 16, valor: (r) => r.numero_guia ?? "" },
   { header: "Modalidad", width: 12, valor: (r) => MODALIDAD_SHORT[r.modalidad] },
   { header: "Tracking courier", width: 18, valor: (r) => r.courier_tracking ?? "" },
   { header: "Entrega parcial", width: 14, valor: (r) => (r.entrega_parcial ? "Sí" : "No") },
@@ -58,12 +54,19 @@ const BASE_FIN: Columna[] = [
   { header: "Fecha de completado", width: 18, valor: (r) => fechaHoraLima(r.completed_at) },
 ];
 
-/** Cotizaciones (Cliente): llevan proyecto y la compra a proveedor asociada. */
+/**
+ * Cotizaciones (Cliente): llevan proyecto y la compra a proveedor asociada, y
+ * son las únicas que llevan guía — la emite SkyHigh y solo aplica a
+ * clientes, la del proveedor nunca se registra. El N° es el puente con la
+ * descarga de guías: es el nombre de la carpeta dentro del ZIP, así que
+ * desde una fila del Excel se llega a sus fotos sin tener que adivinar.
+ */
 const COLUMNAS_COTIZACION: Columna[] = [
   ...BASE_INICIO,
   { header: "Proyecto", width: 30, valor: (r) => r.proyecto ?? "" },
   { header: "Proveedor de compra", width: 24, valor: (r) => r.proveedor ?? "" },
   { header: "N° pedido de compra", width: 18, valor: (r) => r.numero_pedido_compra ?? "" },
+  { header: "N° de guía", width: 16, valor: (r) => r.numero_guia ?? "" },
   ...BASE_FIN,
 ];
 
@@ -100,6 +103,7 @@ const COLUMNAS_CSV: Columna[] = [
   { header: "Proyecto", width: 30, valor: (r) => r.proyecto ?? "" },
   { header: "Proveedor de compra", width: 24, valor: (r) => r.proveedor ?? "" },
   { header: "N° pedido de compra", width: 18, valor: (r) => r.numero_pedido_compra ?? "" },
+  { header: "N° de guía", width: 16, valor: (r) => r.numero_guia ?? "" },
   ...BASE_FIN,
   { header: "Fecha de recojo", width: 18, valor: (r) => fechaHoraLima(r.en_transito_at) },
   {

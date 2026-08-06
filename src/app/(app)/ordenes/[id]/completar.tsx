@@ -1,12 +1,11 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, startTransition } from "react";
+import { useActionState, useState, startTransition } from "react";
 import {
   CheckCircle2,
   AlertTriangle,
   Camera,
   FileText,
-  ScanText,
   Truck,
   PackageX,
 } from "lucide-react";
@@ -17,60 +16,7 @@ import {
   type FormResult,
 } from "../actions";
 import { MultiImagePicker, type PickedImage } from "@/components/multi-image-picker";
-import { reconocerNumeroGuia } from "@/lib/ocr-guia";
 import { TYPE_LABEL, type OrderType } from "@/lib/types";
-
-type OcrEstado = "idle" | "leyendo" | "detectado" | "no-detectado";
-
-/**
- * Corre OCR sobre la primera foto de guía apenas se agrega, y solo si el
- * campo sigue vacío — nunca pisa algo que la persona ya escribió a mano.
- * El resultado sigue siendo editable: esto es una ayuda, no la fuente de
- * verdad (ver ocr-guia.ts).
- */
-function useOcrNumeroGuia(
-  images: PickedImage[],
-  numeroGuia: string,
-  setNumeroGuia: (v: string) => void
-) {
-  const [ocrEstado, setOcrEstado] = useState<OcrEstado>("idle");
-  // El OCR tarda unos segundos: si la persona ya empezó a tipear el número
-  // a mano mientras tanto, el resultado (que puede venir mal leído, ver
-  // ocr-guia.ts) no debe pisarle lo que escribió. useRef en vez del valor
-  // de la clausura porque el efecto no puede depender de numeroGuia sin
-  // relanzar el OCR en cada letra.
-  const numeroGuiaRef = useRef(numeroGuia);
-  useEffect(() => {
-    numeroGuiaRef.current = numeroGuia;
-  }, [numeroGuia]);
-
-  useEffect(() => {
-    if (images.length === 0 || numeroGuiaRef.current.trim().length > 0) return;
-    let cancelado = false;
-
-    async function leer() {
-      setOcrEstado("leyendo");
-      const detectado = await reconocerNumeroGuia(images[0].file);
-      if (cancelado || numeroGuiaRef.current.trim().length > 0) return;
-      if (detectado) {
-        setNumeroGuia(detectado);
-        setOcrEstado("detectado");
-      } else {
-        setOcrEstado("no-detectado");
-      }
-    }
-    leer();
-
-    return () => {
-      cancelado = true;
-    };
-    // Se dispara solo cuando cambia la lista de fotos: si se incluyera
-    // numeroGuia acá, cada letra tipeada relanzaría el OCR.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [images]);
-
-  return ocrEstado;
-}
 
 function esPdf(url: string) {
   return url.split("?")[0].toLowerCase().endsWith(".pdf");
@@ -82,13 +28,21 @@ function esPdf(url: string) {
  * antes no la tenía a mano en este paso, solo un selector de fotos vacío que
  * parecía pedirle que la subiera de nuevo.
  */
-function GuiaRegistrada({ urls, numero }: { urls: string[]; numero?: string | null }) {
+function GuiaRegistrada({
+  urls,
+  numero,
+  titulo = "Guía del recojo",
+}: {
+  urls: string[];
+  numero?: string | null;
+  titulo?: string;
+}) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-3">
       <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
         <FileText className="h-4 w-4 shrink-0 text-gray-400" strokeWidth={2.25} />
         <span className="font-medium text-gray-700">
-          Guía del recojo{urls.length > 1 && ` (${urls.length} fotos)`}
+          {titulo}{urls.length > 1 && ` (${urls.length} fotos)`}
         </span>
         {numero && <span className="font-semibold text-gray-900">N° {numero}</span>}
       </div>
@@ -126,52 +80,31 @@ function GuiaRegistrada({ urls, numero }: { urls: string[]; numero?: string | nu
   );
 }
 
-function OcrHint({ estado }: { estado: OcrEstado }) {
-  if (estado === "leyendo")
-    return (
-      <p className="mt-1 flex items-center gap-1 text-xs text-gray-400">
-        <ScanText className="h-3.5 w-3.5" strokeWidth={2} />
-        Leyendo el número de guía de la foto...
-      </p>
-    );
-  if (estado === "detectado")
-    return (
-      <p className="mt-1 flex items-center gap-1 text-xs text-sky-700">
-        <ScanText className="h-3.5 w-3.5" strokeWidth={2} />
-        Detectado automáticamente — verifica que esté bien.
-      </p>
-    );
-  return null;
-}
-
 /**
- * Paso 1 de un Pedido (Proveedor): el repartidor sube la guía y confirma que
- * recogió el material. A propósito NO se le pregunta completa/parcial — él
- * recibe bultos sellados y no cuenta los ítems. La orden queda "En Tránsito"
- * y la cierra quien cuente la mercadería (ver CompletarForm).
+ * Paso 1 de un Pedido (Proveedor): el repartidor confirma que recogió el
+ * material. A propósito NO se le pregunta completa/parcial — él recibe bultos
+ * sellados y no cuenta los ítems. La orden queda "En Tránsito" y la cierra
+ * quien cuente la mercadería (ver CompletarForm).
+ *
+ * Acá NO se pide guía: la guía de remisión la emite SkyHigh y solo aplica a
+ * clientes. La del proveedor nunca se registra. La constancia del recojo pasa
+ * a ser la foto del material, que por eso es obligatoria.
  */
 export function RecojoForm({ orderId }: { orderId: string }) {
   const [state, action, pending] = useActionState<FormResult, FormData>(marcarEnTransito, {});
-  const [images, setImages] = useState<PickedImage[]>([]);
   const [materialImages, setMaterialImages] = useState<PickedImage[]>([]);
-  const [numeroGuia, setNumeroGuia] = useState("");
+  const [observaciones, setObservaciones] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
-  const ocrEstado = useOcrNumeroGuia(images, numeroGuia, setNumeroGuia);
 
   function confirmar() {
-    if (images.length === 0) {
-      setLocalError("Primero toma la foto de la guía.");
-      return;
-    }
-    if (numeroGuia.trim().length === 0) {
-      setLocalError("Escribe el número de guía (está impreso en el documento).");
+    if (materialImages.length === 0) {
+      setLocalError("Toma al menos una foto del material que estás recogiendo.");
       return;
     }
     setLocalError(null);
     const fd = new FormData();
     fd.set("order_id", orderId);
-    fd.set("numero_guia", numeroGuia.trim());
-    images.forEach((img) => fd.append("guias", img.file));
+    fd.set("observaciones", observaciones.trim());
     materialImages.forEach((img) => fd.append("material", img.file));
     startTransition(() => action(fd));
   }
@@ -182,30 +115,29 @@ export function RecojoForm({ orderId }: { orderId: string }) {
     <div className="space-y-4 rounded-2xl border border-sky-300 bg-sky-50 p-4">
       <h2 className="flex items-center gap-2 font-semibold text-gray-900">
         <Camera className="h-5 w-5 text-sky-700" />
-        Foto(s) de la guía del proveedor
+        Foto(s) del material recogido
       </h2>
 
-      <MultiImagePicker label="" images={images} onChange={setImages} />
+      <MultiImagePicker
+        label=""
+        images={materialImages}
+        onChange={setMaterialImages}
+        soloCamara
+        tituloBoton="Foto Material"
+      />
 
       <div>
-        <label htmlFor="numero_guia_recojo" className="mb-1 block text-xs font-medium text-gray-700">
-          N° de guía (el que está impreso en el documento)
+        <label htmlFor="obs_recojo" className="mb-1 block text-xs font-medium text-gray-700">
+          Observaciones (opcional)
         </label>
-        <input
-          id="numero_guia_recojo"
-          value={numeroGuia}
-          onChange={(e) => setNumeroGuia(e.target.value)}
-          placeholder="Ej. T002-0001"
+        <textarea
+          id="obs_recojo"
+          value={observaciones}
+          onChange={(e) => setObservaciones(e.target.value)}
+          rows={2}
+          placeholder="Ej. Me entregaron 3 bultos, uno venía abierto"
           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-600/30"
         />
-        <OcrHint estado={ocrEstado} />
-      </div>
-
-      <div>
-        <span className="mb-1 block text-xs font-medium text-gray-700">
-          Foto(s) del material (opcional)
-        </span>
-        <MultiImagePicker label="" images={materialImages} onChange={setMaterialImages} />
       </div>
 
       {errorMsg && (
@@ -215,7 +147,7 @@ export function RecojoForm({ orderId }: { orderId: string }) {
       <button
         type="button"
         onClick={confirmar}
-        disabled={pending || images.length === 0}
+        disabled={pending || materialImages.length === 0}
         className="flex w-full items-center justify-center gap-2 rounded-lg bg-sky-700 py-3 font-semibold text-white transition hover:bg-sky-800 disabled:opacity-50"
       >
         <Truck className="h-5 w-5" />
@@ -307,17 +239,20 @@ export default function CompletarForm({
   verificando = false,
   numeroGuiaActual,
   guiasActuales = [],
+  materialActual = [],
 }: {
   orderId: string;
   tipo: OrderType;
-  /** La orden ya venía "En Tránsito": la guía se subió al recoger, así que
-   *  acá la foto es opcional y el texto habla de verificar, no de entregar. */
+  /** La orden ya venía "En Tránsito": ya se subió material al recoger, así
+   *  que acá la foto es opcional y el texto habla de verificar, no de entregar. */
   verificando?: boolean;
-  /** Si ya se escribió el número de guía en el paso de recojo, acá es
-   *  editable por si hay que corregirlo, pero no obligatorio de nuevo. */
+  /** Si ya se escribió el número de guía, acá es editable por si hay que
+   *  corregirlo, pero no obligatorio de nuevo. Solo aplica a clientes. */
   numeroGuiaActual?: string | null;
   /** Guías ya subidas: se muestran para consultarlas al contar. */
   guiasActuales?: string[];
+  /** Fotos de material ya subidas (típicamente en el recojo). */
+  materialActual?: string[];
 }) {
   const [state, action, pending] = useActionState<FormResult, FormData>(
     completeOrder,
@@ -328,16 +263,27 @@ export default function CompletarForm({
   const [numeroGuia, setNumeroGuia] = useState(numeroGuiaActual ?? "");
   const [parcial, setParcial] = useState(false);
   const [faltante, setFaltante] = useState("");
+  const [observaciones, setObservaciones] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
-  const ocrEstado = useOcrNumeroGuia(images, numeroGuia, setNumeroGuia);
+
+  // La guía de remisión la emite SkyHigh y solo aplica a clientes; la del
+  // proveedor no se registra nunca. En un Pedido, entonces, la constancia es
+  // la foto del material.
+  const esRecojo = tipo === "recojo";
+  const pideGuia = !esRecojo;
 
   function confirmar() {
-    if (!verificando && images.length === 0) {
-      setLocalError("Primero toma la foto de la guía.");
-      return;
-    }
-    if (!numeroGuiaActual && numeroGuia.trim().length === 0) {
-      setLocalError("Escribe el número de guía (está impreso en el documento).");
+    if (pideGuia) {
+      if (!verificando && images.length === 0) {
+        setLocalError("Primero toma la foto de la guía.");
+        return;
+      }
+      if (!numeroGuiaActual && numeroGuia.trim().length === 0) {
+        setLocalError("Escribe el número de guía (está impreso en el documento).");
+        return;
+      }
+    } else if (materialImages.length === 0 && materialActual.length === 0) {
+      setLocalError("Toma al menos una foto del material antes de cerrar.");
       return;
     }
     if (parcial && faltante.trim().length === 0) {
@@ -349,7 +295,8 @@ export default function CompletarForm({
     fd.set("order_id", orderId);
     fd.set("entrega_parcial", String(parcial));
     fd.set("nota_faltante", faltante.trim());
-    fd.set("numero_guia", numeroGuia.trim());
+    fd.set("observaciones", observaciones.trim());
+    if (pideGuia) fd.set("numero_guia", numeroGuia.trim());
     images.forEach((img) => fd.append("guias", img.file));
     materialImages.forEach((img) => fd.append("material", img.file));
     startTransition(() => action(fd));
@@ -360,19 +307,52 @@ export default function CompletarForm({
   const accionParticipio = tipo === "entrega" ? "entregado" : "recogido";
   const errorMsg = localError ?? state.error;
 
-  // La guía ya vino del recojo: este paso es CONTAR y cerrar, no volver a
-  // subirla. Se muestra la que existe para consultarla, y el selector pasa a
-  // un paso extra plegado — un caso excepcional (guía borrosa, o el proveedor
-  // despachó con dos guías) no debe ocupar el mismo espacio que lo habitual.
-  const yaHayGuia = verificando && guiasActuales.length > 0;
+  // Lo que ya vino del paso anterior: este paso es CONTAR y cerrar, no volver
+  // a subir lo mismo. Se muestra para consultarlo, y los selectores pasan a un
+  // paso extra plegado — el caso excepcional (una foto borrosa, una segunda
+  // guía) no debe ocupar el mismo espacio que lo habitual.
+  const yaHayGuia = pideGuia && verificando && guiasActuales.length > 0;
+  const yaHayMaterial = esRecojo && verificando && materialActual.length > 0;
+  const plegado = yaHayGuia || yaHayMaterial;
 
-  const camposGuia = (
+  const selectorMaterial = (
+    <div>
+      <span className="mb-1 block text-xs font-medium text-gray-700">
+        Foto(s) del material{pideGuia ? " (opcional)" : ""}
+      </span>
+      <MultiImagePicker
+        label=""
+        images={materialImages}
+        onChange={setMaterialImages}
+        soloCamara
+        tituloBoton="Foto Material"
+      />
+    </div>
+  );
+
+  const camposFoto = pideGuia ? (
     <>
-      <MultiImagePicker label="" images={images} onChange={setImages} />
+      {/* Guía y material lado a lado: son dos fotos del mismo momento, y con
+          el N° de guía en medio el material parecía de otra sección. En
+          celular van apilados pero pegados, porque partir cada selector a la
+          mitad deja los botones de cámara demasiado chicos para el pulgar. */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <span className="mb-1 block text-xs font-medium text-gray-700">Foto(s) de la guía</span>
+          <MultiImagePicker
+            label=""
+            images={images}
+            onChange={setImages}
+            soloCamara
+            tituloBoton="Foto Guía"
+          />
+        </div>
+        {selectorMaterial}
+      </div>
 
       <div>
         <label htmlFor="numero_guia_completar" className="mb-1 block text-xs font-medium text-gray-700">
-          N° de guía (el que está impreso en el documento)
+          N° de guía (el que emitimos nosotros)
           {numeroGuiaActual && " — ya registrado, corrígelo si hace falta"}
         </label>
         <input
@@ -382,38 +362,39 @@ export default function CompletarForm({
           placeholder="Ej. T002-0001"
           className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
         />
-        <OcrHint estado={ocrEstado} />
-      </div>
-
-      <div>
-        <span className="mb-1 block text-xs font-medium text-gray-700">
-          Foto(s) del material (opcional)
-        </span>
-        <MultiImagePicker label="" images={materialImages} onChange={setMaterialImages} />
       </div>
     </>
+  ) : (
+    selectorMaterial
   );
 
   return (
     <div className="space-y-4 rounded-2xl border border-brand/30 bg-brand/5 p-4">
       <h2 className="flex items-center gap-2 font-semibold text-gray-900">
         <Camera className="h-5 w-5 text-brand" />
-        {yaHayGuia ? "Contar y cerrar la orden" : "Foto(s) de la guía"}
+        {plegado
+          ? "Contar y cerrar la orden"
+          : pideGuia
+            ? "Foto(s) de la guía"
+            : "Foto(s) del material"}
       </h2>
 
-      {yaHayGuia ? (
+      {plegado ? (
         <>
-          <GuiaRegistrada urls={guiasActuales} numero={numeroGuiaActual} />
+          {yaHayGuia && <GuiaRegistrada urls={guiasActuales} numero={numeroGuiaActual} />}
+          {yaHayMaterial && (
+            <GuiaRegistrada urls={materialActual} titulo="Material del recojo" />
+          )}
           <details className="rounded-xl border border-gray-200 bg-white px-3 py-2">
             <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-gray-600">
               <Camera className="h-4 w-4 shrink-0 text-gray-400" strokeWidth={2.25} />
-              Agregar otra guía, fotos del material o corregir el N°
+              {pideGuia ? "Agregar otra guía, fotos del material o corregir el N°" : "Agregar más fotos del material"}
             </summary>
-            <div className="mt-3 space-y-3">{camposGuia}</div>
+            <div className="mt-3 space-y-3">{camposFoto}</div>
           </details>
         </>
       ) : (
-        camposGuia
+        camposFoto
       )}
 
       <div>
@@ -465,6 +446,24 @@ export default function CompletarForm({
         )}
       </div>
 
+      {/* Aparte de "qué falta" (que alimenta el remanente): esto es un
+          comentario libre para cualquier eventualidad, salga completa o no.
+          Antes solo existía el de arriba, y no había dónde anotar algo como
+          "el cliente recibió con la tienda cerrada" en una entrega normal. */}
+      <div>
+        <label htmlFor="obs_completar" className="mb-1 block text-xs font-medium text-gray-700">
+          Observaciones (opcional)
+        </label>
+        <textarea
+          id="obs_completar"
+          value={observaciones}
+          onChange={(e) => setObservaciones(e.target.value)}
+          rows={2}
+          placeholder="Cualquier eventualidad que quieras dejar registrada"
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+        />
+      </div>
+
       {errorMsg && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-dark">{errorMsg}</p>
       )}
@@ -472,7 +471,12 @@ export default function CompletarForm({
       <button
         type="button"
         onClick={confirmar}
-        disabled={pending || (!verificando && images.length === 0)}
+        disabled={
+          pending ||
+          (pideGuia
+            ? !verificando && images.length === 0
+            : materialImages.length === 0 && materialActual.length === 0)
+        }
         className="w-full rounded-lg bg-brand py-3 font-semibold text-white transition hover:bg-brand-dark disabled:opacity-50"
       >
         {pending
