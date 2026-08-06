@@ -45,6 +45,10 @@ export type Order = {
    */
   division_tipo: DivisionTipo | null;
   nota: string | null;
+  /** Última observación operativa (recojo o cierre), para cualquier
+   *  eventualidad — distinta de `nota`, que es de Ventas. El hilo completo
+   *  vive en order_events. */
+  observaciones: string | null;
   created_by: string | null;
   assigned_to: string | null;
   created_at: string;

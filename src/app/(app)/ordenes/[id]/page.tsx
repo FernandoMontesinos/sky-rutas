@@ -293,6 +293,16 @@ export default async function OrdenDetallePage({
             <dd className="break-words font-medium text-gray-800">{order.nota}</dd>
           </div>
         )}
+        {/* Distinta de "Nota" a propósito: la nota la escribe Ventas al crear
+            el pedido; esto lo escribe quien opera (recoge o cierra) para
+            dejar constancia de una eventualidad. El hilo completo, con quién
+            y cuándo, está en el Historial — acá se ve solo la más reciente. */}
+        {order.observaciones && (
+          <div className="col-span-2 min-w-0">
+            <dt className="text-gray-400">Observaciones</dt>
+            <dd className="break-words font-medium text-gray-800">{order.observaciones}</dd>
+          </div>
+        )}
       </dl>
 
       {/* Modalidad (almacén/admin) */}
@@ -348,6 +358,7 @@ export default async function OrdenDetallePage({
               tipo={order.tipo}
               numeroGuiaActual={order.numero_guia}
               guiasActuales={imagenesGuia}
+              materialActual={imagenesMaterial}
             />
           </AlmacenOverrideCompletar>
         ) : (
@@ -357,6 +368,7 @@ export default async function OrdenDetallePage({
             verificando={estaEnTransito}
             numeroGuiaActual={order.numero_guia}
             guiasActuales={imagenesGuia}
+            materialActual={imagenesMaterial}
           />
         )
       )}
@@ -367,8 +379,11 @@ export default async function OrdenDetallePage({
         </p>
       )}
 
-      {/* Guía (cuando ya se completó) */}
-      {imagenesGuia.length > 0 && (
+      {/* Guía (cuando ya se completó). Solo Cotizaciones: la guía la emite
+          SkyHigh y solo aplica a clientes — la del proveedor nunca se
+          registra. Un Pedido antiguo que sí tenga (de antes de este cambio)
+          se deja guardado pero se oculta acá, para no confundir. */}
+      {order.tipo === "entrega" && imagenesGuia.length > 0 && (
         <div>
           <h2 className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm font-medium text-gray-500">
             Guía {imagenesGuia.length > 1 && `(${imagenesGuia.length} fotos)`}

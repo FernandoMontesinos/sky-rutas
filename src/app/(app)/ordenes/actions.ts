@@ -343,6 +343,12 @@ export async function updateModalidad(formData: FormData): Promise<void> {
  * `completeOrder` — almacén cuando llega al depósito, o el propio repartidor
  * cuando va directo al cliente y el cliente cuenta y firma delante suyo.
  */
+/**
+ * La guía de remisión la emite SkyHigh y solo aplica a una entrega a
+ * cliente — la del proveedor nunca se registra, así que un Pedido no pide
+ * guía en ningún paso. La constancia del recojo pasa a ser la foto del
+ * material, por eso acá es obligatoria.
+ */
 export async function marcarEnTransito(
   _prev: FormResult,
   formData: FormData
@@ -350,14 +356,12 @@ export async function marcarEnTransito(
   await requireRole(["repartidor", "almacen", "admin"]);
 
   const orderId = String(formData.get("order_id") ?? "");
-  const numeroGuia = String(formData.get("numero_guia") ?? "").trim();
-  const guias = formData.getAll("guias").filter((f): f is File => f instanceof File && f.size > 0);
+  const observaciones = String(formData.get("observaciones") ?? "").trim();
   const material = formData.getAll("material").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!orderId) return { error: "Orden inválida." };
-  if (guias.length === 0)
-    return { error: "Toma al menos una foto de la guía antes de confirmar." };
-  if (!numeroGuia) return { error: "Ingresa el número de guía (escrito a mano)." };
+  if (material.length === 0)
+    return { error: "Toma al menos una foto del material antes de confirmar." };
 
   const supabase = await createClient();
 
@@ -373,23 +377,21 @@ export async function marcarEnTransito(
   if (actual.estado !== "asignado")
     return { error: "Esta orden ya no está asignada; recarga la página para ver su estado actual." };
 
-  const { urls, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
-  if (upErr) return { error: "No se pudo subir la foto: " + upErr };
-  const { urls: materialUrls, error: matErr } =
-    material.length > 0
-      ? await uploadMany(supabase, "guias", `${orderId}/material`, material)
-      : { urls: [] as string[], error: undefined };
+  const { urls: materialUrls, error: matErr } = await uploadMany(
+    supabase,
+    "guias",
+    `${orderId}/material`,
+    material
+  );
   if (matErr) return { error: "No se pudo subir la foto del material: " + matErr };
 
   const { data: updated, error } = await supabase
     .from("orders")
     .update({
-      guia_url: urls[0] ?? null,
-      guias_urls: urls,
-      numero_guia: numeroGuia,
       material_urls: materialUrls,
       estado: "en_transito",
       en_transito_at: new Date().toISOString(),
+      ...(observaciones ? { observaciones } : {}),
     })
     .eq("id", orderId)
     .select("numero_pedido, cliente")
@@ -397,6 +399,7 @@ export async function marcarEnTransito(
   if (error) return { error: error.message };
 
   await registrarEvento(supabase, orderId, "recogida");
+  if (observaciones) await registrarEvento(supabase, orderId, "observacion", observaciones);
 
   const almacenIds = await userIdsByRole("almacen");
   await notify(almacenIds, {
@@ -647,6 +650,7 @@ export async function completeOrder(
   const orderId = String(formData.get("order_id") ?? "");
   const parcial = String(formData.get("entrega_parcial") ?? "") === "true";
   const notaFaltante = String(formData.get("nota_faltante") ?? "").trim();
+  const observaciones = String(formData.get("observaciones") ?? "").trim();
   const numeroGuiaInput = String(formData.get("numero_guia") ?? "").trim();
   const guias = formData.getAll("guias").filter((f): f is File => f instanceof File && f.size > 0);
   const material = formData.getAll("material").filter((f): f is File => f instanceof File && f.size > 0);
@@ -659,12 +663,17 @@ export async function completeOrder(
 
   const { data: actual } = await supabase
     .from("orders")
-    .select("id, estado, guias_urls, guia_url, numero_guia, material_urls, numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, tipo, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by")
+    .select("id, estado, tipo, guias_urls, guia_url, numero_guia, material_urls, numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by")
     .eq("id", orderId)
     .single();
   if (!actual) return { error: "Orden inválida." };
   if (actual.estado === "completado")
     return { error: "Esta orden ya fue cerrada por otra persona." };
+
+  // La guía de remisión la emite SkyHigh y solo aplica a una entrega a
+  // cliente — la del proveedor nunca se registra, así que un Pedido no la
+  // pide en ningún paso. Ahí la constancia es la foto del material.
+  const esRecojo = actual.tipo === "recojo";
 
   const guiasPrevias: string[] = actual.guias_urls?.length
     ? actual.guias_urls
@@ -672,23 +681,29 @@ export async function completeOrder(
       ? [actual.guia_url]
       : [];
 
-  if (guias.length === 0 && guiasPrevias.length === 0)
-    return { error: "Toma al menos una foto de la guía antes de confirmar." };
+  let numeroGuia: string | null = null;
+  if (!esRecojo) {
+    if (guias.length === 0 && guiasPrevias.length === 0)
+      return { error: "Toma al menos una foto de la guía antes de confirmar." };
+    // El número de guía se pide una sola vez: si ya se escribió en el paso
+    // de recojo, acá es opcional (solo se usa para corregirlo). Si esta
+    // orden nunca pasó por ese paso (entrega directa), sí es obligatorio.
+    numeroGuia = numeroGuiaInput || actual.numero_guia;
+    if (!numeroGuia) return { error: "Ingresa el número de guía (escrito a mano)." };
+  }
 
-  // El número de guía se pide una sola vez: si ya se escribió en el paso de
-  // recojo (marcarEnTransito), acá es opcional (solo se usa para corregirlo).
-  // Si esta orden nunca pasó por ese paso (entrega directa), sí es obligatorio.
-  const numeroGuia = numeroGuiaInput || actual.numero_guia;
-  if (!numeroGuia) return { error: "Ingresa el número de guía (escrito a mano)." };
+  const materialPrevio = actual.material_urls ?? [];
+  if (esRecojo && material.length === 0 && materialPrevio.length === 0)
+    return { error: "Toma al menos una foto del material antes de cerrar." };
 
   let urls = guiasPrevias;
-  if (guias.length > 0) {
+  if (!esRecojo && guias.length > 0) {
     const { urls: nuevas, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
     if (upErr) return { error: "No se pudo subir la foto: " + upErr };
     urls = [...guiasPrevias, ...nuevas];
   }
 
-  let materialUrls = actual.material_urls ?? [];
+  let materialUrls = materialPrevio;
   if (material.length > 0) {
     const { urls: nuevasMaterial, error: matErr } = await uploadMany(
       supabase,
@@ -728,6 +743,7 @@ export async function completeOrder(
       entrega_parcial: parcial,
       estado: "completado",
       completed_at: new Date().toISOString(),
+      ...(observaciones ? { observaciones } : {}),
     })
     .eq("id", orderId);
   if (error) return { error: error.message };
@@ -740,6 +756,7 @@ export async function completeOrder(
     parcial ? "parcial" : "completada",
     parcial ? notaFaltante : null
   );
+  if (observaciones) await registrarEvento(supabase, orderId, "observacion", observaciones);
 
   if (updated.created_by) {
     await notify([updated.created_by], {
