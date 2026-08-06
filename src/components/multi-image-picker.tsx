@@ -17,13 +17,13 @@ function esArchivoValido(f: File) {
  * pegar con Ctrl+V. Cada imagen se comprime antes de agregarse a la lista
  * (ver lib/compress-image.ts); los PDF se suben sin tocar.
  *
- * `soloCamara` quita la opción de elegir de galería/archivo — para las fotos
- * de guía y material, que son evidencia del momento (recojo o entrega): una
- * foto de galería podría ser vieja, de otra orden, o ni siquiera propia. En
- * celular esto sí obliga a usar la cámara; en PC el navegador decide qué
- * hace con `capture` (algunos abren la webcam, otros el explorador de
- * archivos igual) — no hay forma de exigirlo desde la web en un navegador
- * de escritorio común.
+ * `soloCamara` quita la opción de elegir de galería solo en CELULAR — para
+ * las fotos de guía y material, que son evidencia del momento (recojo o
+ * entrega): una foto de galería podría ser vieja, de otra orden, o ni
+ * siquiera propia. En PC se deja el comportamiento normal (adjuntar una
+ * imagen o PDF ya existente): ahí no hay cámara del celular de por medio, y
+ * quien cierra una orden desde su computadora sí necesita poder adjuntar un
+ * archivo.
  */
 export function MultiImagePicker({
   label,
@@ -122,76 +122,60 @@ export function MultiImagePicker({
         </div>
       )}
 
-      {soloCamara ? (
-        // Un solo botón, mismo en celular y PC: nada de galería ni de
-        // "elegir archivo". El capture="environment" del input abre la
-        // cámara en celular; en PC el navegador decide (webcam o explorador
-        // según el caso), pero la opción de elegir un archivo cualquiera
-        // queda eliminada de la interfaz.
+      {/* Celular: cámara siempre; galería solo si no es soloCamara */}
+      <div className={soloCamara ? "sm:hidden" : "grid grid-cols-2 gap-3 sm:hidden"}>
         <button
           type="button"
           onClick={() => cameraRef.current?.click()}
-          className="flex w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-4 py-6 text-center text-gray-600 transition hover:border-brand hover:text-brand active:scale-95"
+          className="flex w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-5 text-center text-gray-600 transition active:scale-95 active:border-brand active:text-brand"
         >
           <Camera className="h-7 w-7" strokeWidth={1.75} />
-          <span className="font-semibold">
-            {images.length > 0 ? `Agregar otra: ${tituloBoton ?? "foto"}` : tituloBoton ?? "Tomar foto"}
+          <span className="text-sm font-semibold">
+            {tituloBoton ?? (images.length > 0 ? "Agregar otra" : "Tomar foto")}
           </span>
         </button>
-      ) : (
-        <>
-          {/* Celular: cámara o galería */}
-          <div className="grid grid-cols-2 gap-3 sm:hidden">
-            <button
-              type="button"
-              onClick={() => cameraRef.current?.click()}
-              className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-5 text-center text-gray-600 transition active:scale-95 active:border-brand active:text-brand"
-            >
-              <Camera className="h-7 w-7" strokeWidth={1.75} />
-              <span className="text-sm font-semibold">Tomar foto</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => galleryRef.current?.click()}
-              className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-5 text-center text-gray-600 transition active:scale-95 active:border-brand active:text-brand"
-            >
-              <ImagePlus className="h-7 w-7" strokeWidth={1.75} />
-              <span className="text-sm font-semibold">
-                {images.length > 0 ? "Agregar otra" : "Elegir imagen o PDF"}
-              </span>
-            </button>
-          </div>
-
-          {/* PC/tablet: pegar o elegir */}
+        {!soloCamara && (
           <button
             type="button"
             onClick={() => galleryRef.current?.click()}
-            className="hidden w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-4 py-6 text-center text-gray-500 transition hover:border-brand hover:text-brand sm:flex"
+            className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-3 py-5 text-center text-gray-600 transition active:scale-95 active:border-brand active:text-brand"
           >
-            <ClipboardPaste className="h-7 w-7" strokeWidth={1.75} />
-            <span className="font-medium">
-              {allowPaste ? "Pega una imagen o PDF aquí (Ctrl + V)" : "Toca para elegir imagen o PDF"}
-            </span>
-            <span className="text-sm">
-              {images.length > 0 ? "o haz clic para agregar otra" : "o haz clic para elegir un archivo"}
+            <ImagePlus className="h-7 w-7" strokeWidth={1.75} />
+            <span className="text-sm font-semibold">
+              {images.length > 0 ? "Agregar otra" : "Elegir imagen o PDF"}
             </span>
           </button>
-        </>
-      )}
+        )}
+      </div>
 
-      {!soloCamara && (
-        <input
-          ref={galleryRef}
-          type="file"
-          accept="image/*,application/pdf"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            addFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-      )}
+      {/* PC/tablet: siempre puede adjuntar (imagen o PDF), sin cámara de por
+          medio — soloCamara no aplica acá a propósito. */}
+      <button
+        type="button"
+        onClick={() => galleryRef.current?.click()}
+        className="hidden w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-gray-300 bg-white px-4 py-6 text-center text-gray-500 transition hover:border-brand hover:text-brand sm:flex"
+      >
+        <ClipboardPaste className="h-7 w-7" strokeWidth={1.75} />
+        <span className="font-medium">
+          {tituloBoton ??
+            (allowPaste ? "Pega una imagen o PDF aquí (Ctrl + V)" : "Toca para elegir imagen o PDF")}
+        </span>
+        <span className="text-sm">
+          {images.length > 0 ? "o haz clic para agregar otra" : "o haz clic para elegir un archivo"}
+        </span>
+      </button>
+
+      <input
+        ref={galleryRef}
+        type="file"
+        accept="image/*,application/pdf"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          addFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
       <input
         ref={cameraRef}
         type="file"
