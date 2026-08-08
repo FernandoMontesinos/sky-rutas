@@ -282,11 +282,27 @@ function Column({
   // ahora son dos tableros distintos, cada uno con su propio tipo.
   const Card = detallado ? OrderCardDetallado : OrderCardCompact;
 
+  // Agrupadas por empresa (alfabético) en vez de por fecha: todas las
+  // órdenes de un mismo cliente/proveedor quedan juntas, que es como
+  // almacén/ventas las busca de un vistazo. Un `.sort` sobre solo el nombre
+  // es estable (garantizado desde ES2019), así que dentro de una misma
+  // empresa las órdenes conservan el orden por fecha que ya traía la
+  // consulta — no hace falta un criterio de desempate aparte. Sin empresa
+  // (caso raro) va al final, no al principio.
+  const porEmpresa = (a: OrderWithNames, b: OrderWithNames) => {
+    const na = (a.cliente ?? "").trim();
+    const nb = (b.cliente ?? "").trim();
+    if (!na && nb) return 1;
+    if (na && !nb) return -1;
+    return na.localeCompare(nb, "es", { sensitivity: "base" });
+  };
+  const ordenadas = [...orders].sort(porEmpresa);
+
   // Una orden que volvió por "no se recogió" necesita una acción distinta a
   // una orden nueva (llamar al proveedor vs. asignar repartidor), así que va
   // agrupada arriba en vez de perdida entre las demás.
-  const noRecogidas = separarNoRecogidos ? orders.filter((o) => o.no_recogido_intentos > 0) : [];
-  const resto = separarNoRecogidos ? orders.filter((o) => o.no_recogido_intentos === 0) : orders;
+  const noRecogidas = separarNoRecogidos ? ordenadas.filter((o) => o.no_recogido_intentos > 0) : [];
+  const resto = separarNoRecogidos ? ordenadas.filter((o) => o.no_recogido_intentos === 0) : ordenadas;
 
   return (
     <div
