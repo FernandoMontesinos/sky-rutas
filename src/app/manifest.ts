@@ -14,6 +14,15 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     background_color: "#f3f4f6",
     theme_color: "#dc2626",
-    icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
+    // PNG, no SVG: Chrome en Android ignora los íconos SVG del manifest para
+    // el "Agregar a pantalla de inicio" y para el ícono de las notificaciones
+    // push — se quedaba con el ícono genérico del navegador. El "maskable"
+    // lleva más aire porque el launcher recorta hasta un 20% por lado al
+    // adaptarlo a la forma del sistema (círculo, squircle, etc.).
+    icons: [
+      { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
   };
 }

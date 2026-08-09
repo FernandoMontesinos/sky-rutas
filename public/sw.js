@@ -13,8 +13,12 @@ self.addEventListener("push", (event) => {
 
   const options = {
     body: payload.body || "",
-    icon: "/icon.svg",
-    badge: "/icon.svg",
+    // PNG obligatorio: Android no renderiza SVG en las notificaciones, así
+    // que con el ícono anterior salía el genérico de Chrome. El badge (el
+    // ícono chico de la barra de estado) el sistema lo pinta plano usando
+    // solo el canal alfa — por eso es una silueta aparte, no el logo a color.
+    icon: "/icon-192.png",
+    badge: "/badge-96.png",
     data: { url: payload.url || "/ordenes" },
     tag: payload.tag || undefined,
   };
