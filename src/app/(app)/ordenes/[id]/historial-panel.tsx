@@ -2,16 +2,10 @@
 
 import { useState } from "react";
 import { History, X } from "lucide-react";
+import { fechaHoraCorta } from "@/lib/fecha";
 import { CAMPO_LABEL, EVENTO_LABEL, type OrderEvent } from "@/lib/historial";
 
-function fecha(iso: string) {
-  return new Date(iso).toLocaleString("es-PE", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+const fecha = fechaHoraCorta;
 
 function Linea({ e }: { e: OrderEvent }) {
   const titulo = EVENTO_LABEL[e.tipo] ?? e.tipo;

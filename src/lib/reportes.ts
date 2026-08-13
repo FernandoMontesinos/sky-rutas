@@ -1,3 +1,4 @@
+import { TZ_LIMA } from "@/lib/fecha";
 import type { createClient } from "@/lib/supabase/server";
 import type { DivisionTipo, Modalidad, OrderStatus, OrderType } from "@/lib/types";
 
@@ -10,7 +11,6 @@ import type { DivisionTipo, Modalidad, OrderStatus, OrderType } from "@/lib/type
 
 /** Arequipa/Lima no usa horario de verano, así que el offset es fijo. */
 const OFFSET_LIMA = "-05:00";
-const TZ_LIMA = "America/Lima";
 
 export type EjeFecha = "creacion" | "completado";
 

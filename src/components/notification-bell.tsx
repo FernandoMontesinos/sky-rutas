@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { Bell } from "lucide-react";
+import { fechaCorta } from "@/lib/fecha";
 import { createClient } from "@/lib/supabase/client";
 import { playNotificationSound } from "@/lib/notification-sound";
 
@@ -22,7 +23,7 @@ function tiempoRelativo(iso: string) {
   if (min < 60) return `hace ${min} min`;
   const h = Math.floor(min / 60);
   if (h < 24) return `hace ${h} h`;
-  return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit" });
+  return fechaCorta(iso);
 }
 
 export function NotificationBell({ userId }: { userId: string }) {

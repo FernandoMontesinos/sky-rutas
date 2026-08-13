@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
+import { fechaHoraCorta } from "@/lib/fecha";
 import type { OrderType } from "@/lib/types";
 
 export type RepMarker = {
@@ -24,12 +25,7 @@ const TRUCK_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="no
 </svg>`;
 
 function popupHtml(m: RepMarker) {
-  const hora = new Date(m.updatedAt).toLocaleString("es-PE", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const hora = fechaHoraCorta(m.updatedAt);
   const items =
     m.ordenes.length > 0
       ? m.ordenes

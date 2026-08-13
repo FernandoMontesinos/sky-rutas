@@ -15,6 +15,7 @@ import {
 import { requireUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
+import { TZ_LIMA } from "@/lib/fecha";
 import { limpiarBusqueda, ymdLima } from "@/lib/reportes";
 import {
   MODALIDAD_SHORT,
@@ -61,8 +62,17 @@ function desdeParaRango(rango: RangoCompletadas) {
 function fmtFechaHora(iso: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
-  const fecha = d.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "2-digit" });
-  const hora = d.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
+  const fecha = d.toLocaleDateString("es-PE", {
+    timeZone: TZ_LIMA,
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
+  const hora = d.toLocaleTimeString("es-PE", {
+    timeZone: TZ_LIMA,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   return `${fecha} · ${hora}`;
 }
 
@@ -70,7 +80,6 @@ function esPdfUrl(url: string) {
   return url.split("?")[0].toLowerCase().endsWith(".pdf");
 }
 
-const TZ_LIMA = "America/Lima";
 const ymd = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: TZ_LIMA });
 
 /**

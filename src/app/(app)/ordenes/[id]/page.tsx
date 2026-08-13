@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Download, GitBranch } from "lucide-react";
 import { requireUser } from "@/lib/auth";
+import { fechaHoraCorta } from "@/lib/fecha";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
 import { ImageGallery } from "@/components/image-gallery";
@@ -19,15 +20,7 @@ import { modalidadLabel, type OrderWithNames, type Profile } from "@/lib/types";
 const SELECT =
   "*, creador:profiles!orders_created_by_fkey(full_name), repartidor:profiles!orders_assigned_to_fkey(full_name)";
 
-function fmt(date: string | null) {
-  if (!date) return null;
-  return new Date(date).toLocaleString("es-PE", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+const fmt = fechaHoraCorta;
 
 export default async function OrdenDetallePage({
   params,

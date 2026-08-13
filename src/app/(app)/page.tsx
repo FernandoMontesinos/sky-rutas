@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PackagePlus, PackageCheck, ClipboardList, Bell } from "lucide-react";
 import { requireUser } from "@/lib/auth";
+import { fechaCorta } from "@/lib/fecha";
 import { createClient } from "@/lib/supabase/server";
 import { ROLE_LABEL } from "@/lib/types";
 import { PushPrompt } from "@/components/push-prompt";
@@ -12,7 +13,7 @@ function tiempoRelativo(iso: string) {
   if (min < 60) return `hace ${min} min`;
   const h = Math.floor(min / 60);
   if (h < 24) return `hace ${h} h`;
-  return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit" });
+  return fechaCorta(iso);
 }
 
 export default async function HomePage() {
