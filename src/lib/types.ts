@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "vendedor" | "almacen" | "repartidor";
+export type UserRole = "admin" | "vendedor" | "almacen" | "repartidor" | "facturacion";
 export type OrderType = "entrega" | "recojo";
 export type OrderStatus = "pendiente" | "asignado" | "en_transito" | "completado";
 export type Modalidad = "reparto" | "oficina" | "courier";
@@ -68,6 +68,7 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   vendedor: "Vendedor",
   almacen: "Almacén",
   repartidor: "Repartidor",
+  facturacion: "Facturación",
 };
 
 export const STATUS_LABEL: Record<OrderStatus, string> = {

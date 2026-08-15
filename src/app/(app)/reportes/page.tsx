@@ -23,7 +23,10 @@ export default async function ReportesPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requireRole(["admin", "almacen"]);
+  const { profile } = await requireRole(["admin", "almacen", "facturacion"]);
+  // Facturación es de solo consulta: ve las guías (su objetivo) pero no la
+  // exportación de datos crudos de órdenes, que es de gestión operativa.
+  const puedeExportarDatos = profile.role === "admin" || profile.role === "almacen";
   const filtros = parseFiltros(await searchParams);
   const supabase = await createClient();
 
@@ -209,6 +212,7 @@ export default async function ReportesPage({
             primero porque es lo que se usa siempre; CSV es para cuando hay
             que meter la data en otro sistema.
           */}
+          {puedeExportarDatos && (
           <details className="relative">
             <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700">
               <Download className="h-4 w-4" strokeWidth={2.25} />
@@ -236,6 +240,7 @@ export default async function ReportesPage({
               </a>
             </div>
           </details>
+          )}
         </div>
       </form>
 

@@ -163,25 +163,40 @@ export function RecojoForm({ orderId }: { orderId: string }) {
   );
 }
 
+/** Motivos fijos: cubren la gran mayoría de los casos sin tener que escribir
+ *  nada. "Otro" es el escape para lo que no calza en ninguno de los dos. */
+const MOTIVOS_FIJOS = ["Proveedor cerrado", "Proveedor no tiene material listo"] as const;
+
 /**
  * El otro desenlace posible del viaje al proveedor: fue y no había material.
  * Va detrás de un paso extra (`<details>`) para que no compita visualmente con
  * "Confirmar recojo", que es lo que pasa casi siempre.
+ *
+ * Botones en vez de un textarea libre: en la calle, con el celular en una
+ * mano, elegir una opción es más rápido y confiable que escribir. "Otro"
+ * revela un campo de texto solo cuando hace falta.
  */
 function NoRecogidoForm({ orderId }: { orderId: string }) {
   const [state, action, pending] = useActionState<FormResult, FormData>(marcarNoRecogido, {});
-  const [motivo, setMotivo] = useState("");
+  const [motivo, setMotivo] = useState<string | null>(null);
+  const [otro, setOtro] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
+  const esOtro = motivo === "otro";
+
   function confirmar() {
-    if (motivo.trim().length === 0) {
-      setLocalError("Escribe por qué no se pudo recoger.");
+    if (!motivo) {
+      setLocalError("Elige por qué no se pudo recoger.");
+      return;
+    }
+    if (esOtro && otro.trim().length === 0) {
+      setLocalError("Cuéntanos qué pasó.");
       return;
     }
     setLocalError(null);
     const fd = new FormData();
     fd.set("order_id", orderId);
-    fd.set("motivo", motivo.trim());
+    fd.set("motivo", esOtro ? otro.trim() : motivo);
     startTransition(() => action(fd));
   }
 
@@ -195,17 +210,51 @@ function NoRecogidoForm({ orderId }: { orderId: string }) {
       </summary>
 
       <div className="mt-3 space-y-2">
-        <label htmlFor="motivo_no_recogido" className="block text-xs font-medium text-gray-700">
+        <p className="text-xs font-medium text-gray-700">
           ¿Por qué? Almacén lo va a ver para coordinar con el proveedor.
-        </label>
-        <textarea
-          id="motivo_no_recogido"
-          value={motivo}
-          onChange={(e) => setMotivo(e.target.value)}
-          rows={2}
-          placeholder="Ej. El proveedor no tenía el material listo, dijeron que el jueves"
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-brand"
-        />
+        </p>
+
+        {/* Columna siempre, en vez de fila: tres botones lado a lado quedan
+            demasiado angostos para tocarlos bien con el pulgar en celular. */}
+        <div className="flex flex-col gap-2">
+          {MOTIVOS_FIJOS.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMotivo(m)}
+              className={`rounded-lg border-2 px-3 py-2.5 text-left text-sm font-medium transition ${
+                motivo === m
+                  ? "border-red-500 bg-red-50 text-red-700"
+                  : "border-gray-300 bg-white text-gray-700 hover:border-red-300"
+              }`}
+            >
+              {m}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setMotivo("otro")}
+            className={`rounded-lg border-2 px-3 py-2.5 text-left text-sm font-medium transition ${
+              esOtro
+                ? "border-red-500 bg-red-50 text-red-700"
+                : "border-gray-300 bg-white text-gray-700 hover:border-red-300"
+            }`}
+          >
+            Otro
+          </button>
+        </div>
+
+        {esOtro && (
+          <textarea
+            value={otro}
+            onChange={(e) => setOtro(e.target.value)}
+            rows={2}
+            placeholder="Cuéntanos qué pasó"
+            aria-label="Detalle del motivo"
+            autoFocus
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-brand"
+          />
+        )}
 
         {errorMsg && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-dark">{errorMsg}</p>

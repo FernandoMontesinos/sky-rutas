@@ -15,9 +15,9 @@ const NAV: NavItem[] = [
   // home lo redirige ahí (ver app/(app)/page.tsx).
   { href: "/", label: "Inicio", icon: "home", roles: ["admin", "vendedor", "almacen"] },
   { href: "/ordenes/nueva", label: "Nueva orden", short: "Nueva", icon: "package-plus", roles: ["admin", "vendedor"] },
-  { href: "/ordenes", label: "Órdenes", icon: "clipboard-list", roles: ["admin", "vendedor", "almacen"] },
-  { href: "/mapa", label: "Mapa", icon: "map", roles: ["admin", "almacen", "vendedor"] },
-  { href: "/reportes", label: "Reportes", icon: "bar-chart", roles: ["admin", "almacen"] },
+  { href: "/ordenes", label: "Órdenes", icon: "clipboard-list", roles: ["admin", "vendedor", "almacen", "facturacion"] },
+  { href: "/mapa", label: "Mapa", icon: "map", roles: ["admin", "almacen", "vendedor", "facturacion"] },
+  { href: "/reportes", label: "Reportes", icon: "bar-chart", roles: ["admin", "almacen", "facturacion"] },
   { href: "/admin/usuarios", label: "Usuarios", icon: "users", roles: ["admin"] },
 ];
 
