@@ -1,0 +1,21 @@
+-- =====================================================================
+-- SkyHigh Rutas — Rol Facturación (solo consulta)
+-- 2026-08-14.
+--
+-- Nuevo rol para que Facturación entre a ver el tablero de Órdenes, el Mapa
+-- y Reportes, y descargue el ZIP de guías — sin poder asignar, editar,
+-- completar ni eliminar nada. `role` en `profiles` es un enum (`user_role`),
+-- no texto libre, así que hace falta agregar el valor al tipo antes de que
+-- la aplicación pueda guardar un perfil con este rol.
+--
+-- No hace falta tocar ninguna policy de RLS: `orders_select` y la lectura de
+-- `storage.objects` (ver 34_storage_lectura_autenticada.sql) ya son "true
+-- para cualquier autenticado" — el filtro por rol vive enteramente en la
+-- aplicación (requireRole por página, y qué botones se renderizan).
+--
+-- ALTER TYPE ... ADD VALUE no puede ir en la misma transacción que otras
+-- sentencias que lo usen; como bloque único no hay problema.
+-- Ejecuta este bloque UNA VEZ en Supabase -> SQL Editor.
+-- =====================================================================
+
+alter type user_role add value if not exists 'facturacion';
