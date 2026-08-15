@@ -363,6 +363,7 @@ export default async function OrdenDetallePage({
             numeroGuiaActual={order.numero_guia}
             guiasActuales={imagenesGuia}
             materialActual={imagenesMaterial}
+            entregaParcialPrevia={order.entrega_parcial}
           />
         )
       )}
