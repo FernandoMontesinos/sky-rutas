@@ -276,9 +276,9 @@ function NoRecogidoForm({ orderId }: { orderId: string }) {
   const errorMsg = localError ?? state.error;
 
   return (
-    <details className="rounded-xl border border-gray-200 bg-white px-3 py-2">
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-gray-600">
-        <PackageX className="h-4 w-4 shrink-0 text-gray-400" strokeWidth={2.25} />
+    <details className="rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-red-700">
+        <PackageX className="h-4 w-4 shrink-0 text-red-500" strokeWidth={2.25} />
         No se pudo recoger
       </summary>
 
@@ -337,7 +337,7 @@ function NoRecogidoForm({ orderId }: { orderId: string }) {
           type="button"
           onClick={confirmar}
           disabled={pending}
-          className="w-full rounded-lg border-2 border-red-500 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+          className="w-full rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
         >
           {pending ? "Registrando..." : "Registrar que no se recogió"}
         </button>
