@@ -155,7 +155,7 @@ function armarHoja(
 }
 
 export async function GET(request: NextRequest) {
-  // Autorización: solo almacén/admin (mismos roles que la pantalla de Reportes).
+  // Autorización: mismos roles que pueden ver la pantalla de Reportes.
   const supabase = await createClient();
   const {
     data: { user },
@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
     .select("role")
     .eq("id", user.id)
     .single();
-  if (!profile || !["admin", "almacen"].includes(profile.role as string)) {
+  if (!profile || !["admin", "almacen", "facturacion"].includes(profile.role as string)) {
     return new NextResponse("Sin permiso", { status: 403 });
   }
 

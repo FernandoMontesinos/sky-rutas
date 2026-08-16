@@ -63,7 +63,8 @@ function guiasDe(f: FilaGuia): string[] {
 }
 
 export async function GET(request: NextRequest) {
-  // Autorización: solo almacén/admin (mismos roles que /api/export).
+  // Autorización: almacén/admin y facturación (esta es la única exportación
+  // a la que facturación tiene acceso — su objetivo es consultar guías).
   const supabase = await createClient();
   const {
     data: { user },
@@ -75,7 +76,7 @@ export async function GET(request: NextRequest) {
     .select("role")
     .eq("id", user.id)
     .single();
-  if (!profile || !["admin", "almacen"].includes(profile.role as string)) {
+  if (!profile || !["admin", "almacen", "facturacion"].includes(profile.role as string)) {
     return new NextResponse("Sin permiso", { status: 403 });
   }
 

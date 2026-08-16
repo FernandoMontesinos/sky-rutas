@@ -8,7 +8,7 @@ import type { UserRole } from "@/lib/types";
 
 export type FormResult = { error?: string; ok?: string };
 
-const ROLES: UserRole[] = ["admin", "vendedor", "almacen", "repartidor"];
+const ROLES: UserRole[] = ["admin", "vendedor", "almacen", "repartidor", "facturacion"];
 
 export async function createUser(
   _prev: FormResult,

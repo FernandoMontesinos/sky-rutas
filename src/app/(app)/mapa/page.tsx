@@ -19,7 +19,7 @@ type OrdRow = { numero_pedido: string; tipo: OrderType; assigned_to: string | nu
 export default async function MapaPage() {
   // El repartidor también entra: ver dónde están los demás le sirve para
   // coordinar un apoyo o un cruce de ruta sin tener que llamar a almacén.
-  await requireRole(["admin", "almacen", "vendedor", "repartidor"]);
+  await requireRole(["admin", "almacen", "vendedor", "repartidor", "facturacion"]);
   const supabase = await createClient();
 
   const [{ data: locs }, { data: ords }] = await Promise.all([

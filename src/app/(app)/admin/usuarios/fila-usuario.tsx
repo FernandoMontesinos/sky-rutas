@@ -5,7 +5,7 @@ import { Check, Pencil, X } from "lucide-react";
 import { actualizarUsuario, toggleActivo, deleteUser, type FormResult } from "./actions";
 import { ROLE_LABEL, type Profile, type UserRole } from "@/lib/types";
 
-const ROLES: UserRole[] = ["admin", "vendedor", "almacen", "repartidor"];
+const ROLES: UserRole[] = ["admin", "vendedor", "almacen", "repartidor", "facturacion"];
 
 /**
  * Una fila de la tabla de usuarios, que se convierte en formulario al tocar

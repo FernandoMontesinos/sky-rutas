@@ -120,7 +120,8 @@ export default async function OrdenDetallePage({
 
   // Mismos roles que el endpoint /api/export-guias, para no ofrecer un botón
   // que después responde 403.
-  const puedeDescargarGuias = profile.role === "admin" || isAlmacen;
+  const puedeDescargarGuias =
+    profile.role === "admin" || isAlmacen || profile.role === "facturacion";
 
   let repartidores: Profile[] = [];
   if (canAssign) {
@@ -362,6 +363,7 @@ export default async function OrdenDetallePage({
             numeroGuiaActual={order.numero_guia}
             guiasActuales={imagenesGuia}
             materialActual={imagenesMaterial}
+            entregaParcialPrevia={order.entrega_parcial}
           />
         )
       )}

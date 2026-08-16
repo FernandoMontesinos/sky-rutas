@@ -80,30 +80,44 @@ function esPdfUrl(url: string) {
   return url.split("?")[0].toLowerCase().endsWith(".pdf");
 }
 
-const ymd = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: TZ_LIMA });
-
 /**
- * Hora corta para las tarjetas: "10:32" si es de hoy, "ayer 15:40", y
- * "02/08 09:15" si es más vieja. El repartidor se guía mucho por la hora y
- * antes tenía que abrir la orden para verla; en la tarjeta tiene que caber
- * al lado de todo lo demás, así que se muestra lo mínimo que la ubica.
+ * Fecha y hora corta para las tarjetas: siempre "dd/mm · hh:mm a. m.", fecha
+ * primero y hora después. Antes variaba según qué tan vieja era ("10:32",
+ * "ayer 15:40", "02/08 09:15") y había que adivinar el día de un vistazo;
+ * con la fecha siempre puesta no hace falta adivinar nada.
  */
-function horaCorta(iso: string | null, hoyStr: string, ayerStr: string) {
+function horaCorta(iso: string | null) {
   if (!iso) return null;
   const d = new Date(iso);
+  const fecha = d.toLocaleDateString("es-PE", {
+    timeZone: TZ_LIMA,
+    day: "2-digit",
+    month: "2-digit",
+  });
   const hora = d.toLocaleTimeString("es-PE", {
     timeZone: TZ_LIMA,
     hour: "2-digit",
     minute: "2-digit",
   });
-  const dia = ymd(d);
-  if (dia === hoyStr) return hora;
-  if (dia === ayerStr) return `ayer ${hora}`;
-  // Se arma a mano en vez de pedirle a Intl día/mes sin año: sin el año en
-  // las opciones, el motor de fechas de este runtime devuelve "3/8" en vez
-  // de "03/08" — se pierde el cero y ya no se lee como fecha a simple vista.
-  const [, mes, diaNum] = dia.split("-");
-  return `${diaNum}/${mes} ${hora}`;
+  return `${fecha} · ${hora}`;
+}
+
+/**
+ * Qué timestamp mostrar según la etapa en la que está la orden AHORA: el
+ * sello siempre cuenta cuándo entró al estado actual (cuándo se asignó,
+ * cuándo se puso en tránsito, cuándo se completó), no cuándo se creó —
+ * antes todas las columnas mostraban la fecha de creación por igual, así
+ * que una orden asignada hace tres días con la tarjeta parada en "Asignadas"
+ * seguía mostrando la hora de cuando entró como pendiente.
+ */
+function horaSegunEstado(o: OrderWithNames): string | null {
+  const campos: Record<OrderStatus, string | null> = {
+    pendiente: o.created_at,
+    asignado: o.assigned_at,
+    en_transito: o.en_transito_at,
+    completado: o.completed_at,
+  };
+  return horaCorta(campos[o.estado] ?? o.created_at);
 }
 
 /**
@@ -166,13 +180,29 @@ function OrderCardCompact({ o, sello }: { o: OrderWithNames; sello: string | nul
         )}
       </div>
 
-      {o.repartidor && (
-        <span
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand/10 text-[11px] font-bold text-brand"
-          title={o.repartidor.full_name}
-        >
-          {inicial(o.repartidor.full_name)}
-        </span>
+      {/* Quién la creó y quién reparte, uno al lado del otro: antes solo se
+          veía el repartidor y había que abrir la orden para saber quién la
+          pidió. Colores distintos (índigo vs. el rojo de marca) para que no
+          se confundan a simple vista. */}
+      {(o.creador || o.repartidor) && (
+        <div className="flex shrink-0 items-center -space-x-1.5">
+          {o.creador && (
+            <span
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-bold text-indigo-700 ring-2 ring-white"
+              title={`Creado por ${o.creador.full_name}`}
+            >
+              {inicial(o.creador.full_name)}
+            </span>
+          )}
+          {o.repartidor && (
+            <span
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-brand/10 text-[11px] font-bold text-brand ring-2 ring-white"
+              title={o.repartidor.full_name}
+            >
+              {inicial(o.repartidor.full_name)}
+            </span>
+          )}
+        </div>
       )}
     </Link>
   );
@@ -266,9 +296,6 @@ function Column({
   color,
   orders,
   detallado,
-  hoyStr,
-  ayerStr,
-  usarCompletado = false,
   fullWidthMobile = false,
   separarNoRecogidos = false,
 }: {
@@ -276,17 +303,12 @@ function Column({
   color: string;
   orders: OrderWithNames[];
   detallado: boolean;
-  hoyStr: string;
-  ayerStr: string;
-  /** En Completadas interesa cuándo se cerró, no cuándo se creó. */
-  usarCompletado?: boolean;
   /** En móvil ocupa todo el ancho (columnas apiladas) en vez de scroll lateral. */
   fullWidthMobile?: boolean;
   /** Solo en Pendientes: sube arriba las que volvieron por un recojo fallido. */
   separarNoRecogidos?: boolean;
 }) {
-  const sello = (o: OrderWithNames) =>
-    horaCorta(usarCompletado ? o.completed_at : o.created_at, hoyStr, ayerStr);
+  const sello = (o: OrderWithNames) => horaSegunEstado(o);
   // Ya no hace falta separar cotizaciones de pedidos dentro de la columna:
   // ahora son dos tableros distintos, cada uno con su propio tipo.
   const Card = detallado ? OrderCardDetallado : OrderCardCompact;
@@ -448,13 +470,6 @@ export default async function OrdenesPage({
   const detallado = sp.densidad === "detallada";
   const rango: RangoCompletadas =
     sp.rango === "semana" || sp.rango === "mes" ? sp.rango : "hoy";
-
-  // Se resuelve una sola vez por carga y se baja a las tarjetas, en vez de
-  // que cada una vuelva a leer el reloj.
-  const ahora = new Date();
-  const hoyStr = ymd(ahora);
-  const ayerStr = ymd(new Date(ahora.getTime() - 86_400_000));
-  const fechas = { hoyStr, ayerStr };
 
   const q = limpiarBusqueda(sp.q ?? "");
   const fRepartidor = sp.repartidor?.trim() || "";
@@ -840,18 +855,15 @@ export default async function OrdenesPage({
                 color="bg-gray-400"
                 orders={activasDe("recojo", "pendiente")}
                 detallado={detallado}
-                {...fechas}
                 separarNoRecogidos
               />
-              <Column title="Asignadas" color="bg-amber-500" orders={activasDe("recojo", "asignado")} detallado={detallado} {...fechas} />
-              <Column title="En Tránsito" color="bg-sky-500" orders={activasDe("recojo", "en_transito")} detallado={detallado} {...fechas} />
+              <Column title="Asignadas" color="bg-amber-500" orders={activasDe("recojo", "asignado")} detallado={detallado} />
+              <Column title="En Tránsito" color="bg-sky-500" orders={activasDe("recojo", "en_transito")} detallado={detallado} />
               <Column
                 title={`Completadas · ${RANGO_LABEL[rango]}`}
                 color="bg-green-500"
                 orders={completadasDe("recojo")}
                 detallado={detallado}
-                {...fechas}
-                usarCompletado
               />
             </div>
           </section>
@@ -866,15 +878,13 @@ export default async function OrdenesPage({
               Cotizaciones · Cliente
             </h2>
             <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
-              <Column title="Pendientes" color="bg-gray-400" orders={activasDe("entrega", "pendiente")} detallado={detallado} {...fechas} />
-              <Column title="Asignadas" color="bg-amber-500" orders={activasDe("entrega", "asignado")} detallado={detallado} {...fechas} />
+              <Column title="Pendientes" color="bg-gray-400" orders={activasDe("entrega", "pendiente")} detallado={detallado} />
+              <Column title="Asignadas" color="bg-amber-500" orders={activasDe("entrega", "asignado")} detallado={detallado} />
               <Column
                 title={`Completadas · ${RANGO_LABEL[rango]}`}
                 color="bg-green-500"
                 orders={completadasDe("entrega")}
                 detallado={detallado}
-                {...fechas}
-                usarCompletado
               />
             </div>
           </section>
@@ -893,7 +903,6 @@ export default async function OrdenesPage({
               color="bg-amber-500"
               orders={byEstado("asignado")}
               detallado={detallado}
-              {...fechas}
               fullWidthMobile
             />
           )}
@@ -906,7 +915,6 @@ export default async function OrdenesPage({
               color="bg-sky-500"
               orders={byEstado("en_transito")}
               detallado={detallado}
-              {...fechas}
               fullWidthMobile
             />
           )}
@@ -916,8 +924,6 @@ export default async function OrdenesPage({
               color="bg-green-500"
               orders={completadasList}
               detallado={detallado}
-              {...fechas}
-              usarCompletado
               fullWidthMobile
             />
           )}

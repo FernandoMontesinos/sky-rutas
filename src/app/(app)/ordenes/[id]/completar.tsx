@@ -82,17 +82,25 @@ function GuiaRegistrada({
 
 /**
  * Paso 1 de un Pedido (Proveedor): el repartidor confirma que recogió el
- * material. A propósito NO se le pregunta completa/parcial — él recibe bultos
- * sellados y no cuenta los ítems. La orden queda "En Tránsito" y la cierra
- * quien cuente la mercadería (ver CompletarForm).
+ * material. A propósito NO cuenta ítems — recibe bultos sellados — pero SÍ
+ * sabe, a nivel de bultos, si el proveedor le dio todo lo pedido o le avisó
+ * que faltaba algo. Esa es la única pregunta que se le hace acá: "Completo"
+ * es el camino de siempre (a En Tránsito, sin más preguntas); "Parcial"
+ * dispara ahí mismo el mismo pedido-remanente que antes se creaba recién al
+ * cerrar (ver completeOrder/marcarEnTransito) — el resto de esa lógica no
+ * cambió, solo se disparó un paso antes. La orden sigue a "En Tránsito" con
+ * lo que sí se recogió, y quien la cierre después ya no vuelve a preguntar
+ * (ver CompletarForm, decidioAlRecoger).
  *
  * Acá NO se pide guía: la guía de remisión la emite SkyHigh y solo aplica a
  * clientes. La del proveedor nunca se registra. La constancia del recojo pasa
- * a ser la foto del material, que por eso es obligatoria.
+ * a ser la foto del material, que por eso es obligatoria en los tres casos.
  */
 export function RecojoForm({ orderId }: { orderId: string }) {
   const [state, action, pending] = useActionState<FormResult, FormData>(marcarEnTransito, {});
   const [materialImages, setMaterialImages] = useState<PickedImage[]>([]);
+  const [parcial, setParcial] = useState(false);
+  const [faltante, setFaltante] = useState("");
   const [observaciones, setObservaciones] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -101,10 +109,16 @@ export function RecojoForm({ orderId }: { orderId: string }) {
       setLocalError("Toma al menos una foto del material que estás recogiendo.");
       return;
     }
+    if (parcial && faltante.trim().length === 0) {
+      setLocalError("Cuéntanos qué falta — se usa para crear el pedido pendiente restante.");
+      return;
+    }
     setLocalError(null);
     const fd = new FormData();
     fd.set("order_id", orderId);
     fd.set("observaciones", observaciones.trim());
+    fd.set("entrega_parcial", String(parcial));
+    fd.set("nota_faltante", faltante.trim());
     materialImages.forEach((img) => fd.append("material", img.file));
     startTransition(() => action(fd));
   }
@@ -125,6 +139,57 @@ export function RecojoForm({ orderId }: { orderId: string }) {
         soloCamara
         tituloBoton="Foto Material"
       />
+
+      <div>
+        <span className="mb-1 block text-sm font-medium text-gray-700">
+          ¿El proveedor te dio todo lo pedido?
+        </span>
+        <p className="mb-2 text-xs text-gray-500">
+          No hace falta contar ítems — solo si te dio menos bultos de los que esperabas o
+          te avisó que faltaba algo.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setParcial(false)}
+            className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 font-bold transition ${
+              !parcial
+                ? "border-green-600 bg-green-600 text-white"
+                : "border-gray-300 bg-white text-gray-700 hover:border-green-600"
+            }`}
+          >
+            <CheckCircle2 className="h-5 w-5" />
+            Completo
+          </button>
+          <button
+            type="button"
+            onClick={() => setParcial(true)}
+            className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 font-bold transition ${
+              parcial
+                ? "border-orange-500 bg-orange-500 text-white"
+                : "border-gray-300 bg-white text-gray-700 hover:border-orange-500"
+            }`}
+          >
+            <AlertTriangle className="h-5 w-5" />
+            Parcial
+          </button>
+        </div>
+        {parcial && (
+          <div className="mt-2 space-y-1.5 rounded-lg border border-orange-200 bg-orange-50 p-3">
+            <label htmlFor="faltante_recojo" className="block text-xs font-medium text-orange-900">
+              ¿Qué falta? Con esto se crea el pedido pendiente con lo que queda.
+            </label>
+            <textarea
+              id="faltante_recojo"
+              value={faltante}
+              onChange={(e) => setFaltante(e.target.value)}
+              rows={2}
+              placeholder="Ej. Faltaron 2 de 5 cajas, el proveedor dijo que el jueves"
+              className="w-full rounded-lg border border-orange-200 bg-white px-3 py-2 text-sm outline-none focus:border-orange-400"
+            />
+          </div>
+        )}
+      </div>
 
       <div>
         <label htmlFor="obs_recojo" className="mb-1 block text-xs font-medium text-gray-700">
@@ -151,11 +216,19 @@ export function RecojoForm({ orderId }: { orderId: string }) {
         className="flex w-full items-center justify-center gap-2 rounded-lg bg-sky-700 py-3 font-semibold text-white transition hover:bg-sky-800 disabled:opacity-50"
       >
         <Truck className="h-5 w-5" />
-        {pending ? "Confirmando..." : "Confirmar recojo"}
+        {pending ? "Confirmando..." : `Confirmar recojo${parcial ? " (parcial)" : ""}`}
       </button>
       <p className="text-center text-xs text-gray-600">
-        Solo confirmas que recogiste el material. No hace falta que cuentes los ítems —
-        la orden queda <strong>En Tránsito</strong> hasta que se verifique la cantidad.
+        {parcial ? (
+          <>
+            Lo que recogiste sigue a <strong>En Tránsito</strong>. Aparte se crea un pedido
+            con lo que falta, para que almacén lo coordine con el proveedor.
+          </>
+        ) : (
+          <>
+            La orden queda <strong>En Tránsito</strong> hasta que se verifique la cantidad.
+          </>
+        )}
       </p>
 
       <NoRecogidoForm orderId={orderId} />
@@ -163,49 +236,98 @@ export function RecojoForm({ orderId }: { orderId: string }) {
   );
 }
 
+/** Motivos fijos: cubren la gran mayoría de los casos sin tener que escribir
+ *  nada. "Otro" es el escape para lo que no calza en ninguno de los dos. */
+const MOTIVOS_FIJOS = ["Proveedor cerrado", "Proveedor no tiene material listo"] as const;
+
 /**
  * El otro desenlace posible del viaje al proveedor: fue y no había material.
  * Va detrás de un paso extra (`<details>`) para que no compita visualmente con
  * "Confirmar recojo", que es lo que pasa casi siempre.
+ *
+ * Botones en vez de un textarea libre: en la calle, con el celular en una
+ * mano, elegir una opción es más rápido y confiable que escribir. "Otro"
+ * revela un campo de texto solo cuando hace falta.
  */
 function NoRecogidoForm({ orderId }: { orderId: string }) {
   const [state, action, pending] = useActionState<FormResult, FormData>(marcarNoRecogido, {});
-  const [motivo, setMotivo] = useState("");
+  const [motivo, setMotivo] = useState<string | null>(null);
+  const [otro, setOtro] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
+  const esOtro = motivo === "otro";
+
   function confirmar() {
-    if (motivo.trim().length === 0) {
-      setLocalError("Escribe por qué no se pudo recoger.");
+    if (!motivo) {
+      setLocalError("Elige por qué no se pudo recoger.");
+      return;
+    }
+    if (esOtro && otro.trim().length === 0) {
+      setLocalError("Cuéntanos qué pasó.");
       return;
     }
     setLocalError(null);
     const fd = new FormData();
     fd.set("order_id", orderId);
-    fd.set("motivo", motivo.trim());
+    fd.set("motivo", esOtro ? otro.trim() : motivo);
     startTransition(() => action(fd));
   }
 
   const errorMsg = localError ?? state.error;
 
   return (
-    <details className="rounded-xl border border-gray-200 bg-white px-3 py-2">
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-gray-600">
-        <PackageX className="h-4 w-4 shrink-0 text-gray-400" strokeWidth={2.25} />
+    <details className="rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-red-700">
+        <PackageX className="h-4 w-4 shrink-0 text-red-500" strokeWidth={2.25} />
         No se pudo recoger
       </summary>
 
       <div className="mt-3 space-y-2">
-        <label htmlFor="motivo_no_recogido" className="block text-xs font-medium text-gray-700">
+        <p className="text-xs font-medium text-gray-700">
           ¿Por qué? Almacén lo va a ver para coordinar con el proveedor.
-        </label>
-        <textarea
-          id="motivo_no_recogido"
-          value={motivo}
-          onChange={(e) => setMotivo(e.target.value)}
-          rows={2}
-          placeholder="Ej. El proveedor no tenía el material listo, dijeron que el jueves"
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-brand"
-        />
+        </p>
+
+        {/* Columna siempre, en vez de fila: tres botones lado a lado quedan
+            demasiado angostos para tocarlos bien con el pulgar en celular. */}
+        <div className="flex flex-col gap-2">
+          {MOTIVOS_FIJOS.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMotivo(m)}
+              className={`rounded-lg border-2 px-3 py-2.5 text-left text-sm font-medium transition ${
+                motivo === m
+                  ? "border-red-500 bg-red-50 text-red-700"
+                  : "border-gray-300 bg-white text-gray-700 hover:border-red-300"
+              }`}
+            >
+              {m}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => setMotivo("otro")}
+            className={`rounded-lg border-2 px-3 py-2.5 text-left text-sm font-medium transition ${
+              esOtro
+                ? "border-red-500 bg-red-50 text-red-700"
+                : "border-gray-300 bg-white text-gray-700 hover:border-red-300"
+            }`}
+          >
+            Otro
+          </button>
+        </div>
+
+        {esOtro && (
+          <textarea
+            value={otro}
+            onChange={(e) => setOtro(e.target.value)}
+            rows={2}
+            placeholder="Cuéntanos qué pasó"
+            aria-label="Detalle del motivo"
+            autoFocus
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-brand"
+          />
+        )}
 
         {errorMsg && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-brand-dark">{errorMsg}</p>
@@ -215,7 +337,7 @@ function NoRecogidoForm({ orderId }: { orderId: string }) {
           type="button"
           onClick={confirmar}
           disabled={pending}
-          className="w-full rounded-lg border-2 border-red-500 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+          className="w-full rounded-lg bg-red-600 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
         >
           {pending ? "Registrando..." : "Registrar que no se recogió"}
         </button>
@@ -240,6 +362,7 @@ export default function CompletarForm({
   numeroGuiaActual,
   guiasActuales = [],
   materialActual = [],
+  entregaParcialPrevia = false,
 }: {
   orderId: string;
   tipo: OrderType;
@@ -253,6 +376,9 @@ export default function CompletarForm({
   guiasActuales?: string[];
   /** Fotos de material ya subidas (típicamente en el recojo). */
   materialActual?: string[];
+  /** Si el repartidor ya marcó "Parcial" al recoger (ver RecojoForm). Solo
+   *  informativo acá — la decisión ya está tomada, no se vuelve a preguntar. */
+  entregaParcialPrevia?: boolean;
 }) {
   const [state, action, pending] = useActionState<FormResult, FormData>(
     completeOrder,
@@ -272,6 +398,13 @@ export default function CompletarForm({
   const esRecojo = tipo === "recojo";
   const pideGuia = !esRecojo;
 
+  // Un Pedido que llegó hasta acá vía "En Tránsito" ya pasó por el recojo del
+  // repartidor, y ahí ya se decidió completo/parcial (ver RecojoForm). No se
+  // vuelve a preguntar: los otros caminos a este formulario (oficina/courier,
+  // el override de almacén, o una entrega a cliente) nunca pasan por un
+  // recojo, así que en esos sí sigue preguntando, igual que siempre.
+  const decidioAlRecoger = esRecojo && verificando;
+
   function confirmar() {
     if (pideGuia) {
       if (!verificando && images.length === 0) {
@@ -286,15 +419,17 @@ export default function CompletarForm({
       setLocalError("Toma al menos una foto del material antes de cerrar.");
       return;
     }
-    if (parcial && faltante.trim().length === 0) {
+    if (!decidioAlRecoger && parcial && faltante.trim().length === 0) {
       setLocalError("Cuéntanos qué falta — se usa para crear el pedido pendiente restante.");
       return;
     }
     setLocalError(null);
     const fd = new FormData();
     fd.set("order_id", orderId);
-    fd.set("entrega_parcial", String(parcial));
-    fd.set("nota_faltante", faltante.trim());
+    if (!decidioAlRecoger) {
+      fd.set("entrega_parcial", String(parcial));
+      fd.set("nota_faltante", faltante.trim());
+    }
     fd.set("observaciones", observaciones.trim());
     if (pideGuia) fd.set("numero_guia", numeroGuia.trim());
     images.forEach((img) => fd.append("guias", img.file));
@@ -373,7 +508,9 @@ export default function CompletarForm({
       <h2 className="flex items-center gap-2 font-semibold text-gray-900">
         <Camera className="h-5 w-5 text-brand" />
         {plegado
-          ? "Contar y cerrar la orden"
+          ? decidioAlRecoger
+            ? "Cerrar la orden"
+            : "Contar y cerrar la orden"
           : pideGuia
             ? "Foto(s) de la guía"
             : "Foto(s) del material"}
@@ -397,54 +534,63 @@ export default function CompletarForm({
         camposFoto
       )}
 
-      <div>
-        <span className="mb-1.5 block text-sm font-medium text-gray-700">
-          {verificando
-            ? "Después de contar los ítems, ¿cómo llegó?"
-            : `¿Cómo quedó ${articulo} ${accion}?`}
-        </span>
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => setParcial(false)}
-            className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 font-bold transition ${
-              !parcial
-                ? "border-green-600 bg-green-600 text-white"
-                : "border-gray-300 bg-white text-gray-700 hover:border-green-600"
-            }`}
-          >
-            <CheckCircle2 className="h-5 w-5" />
-            Completa
-          </button>
-          <button
-            type="button"
-            onClick={() => setParcial(true)}
-            className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 font-bold transition ${
-              parcial
-                ? "border-orange-500 bg-orange-500 text-white"
-                : "border-gray-300 bg-white text-gray-700 hover:border-orange-500"
-            }`}
-          >
-            <AlertTriangle className="h-5 w-5" />
-            Parcial
-          </button>
-        </div>
-        {parcial && (
-          <div className="mt-2 space-y-1.5 rounded-lg border border-orange-200 bg-orange-50 p-3">
-            <label htmlFor="nota_faltante" className="block text-xs font-medium text-orange-900">
-              ¿Qué falta completar? Con esto se crea el pedido pendiente restante.
-            </label>
-            <textarea
-              id="nota_faltante"
-              value={faltante}
-              onChange={(e) => setFaltante(e.target.value)}
-              rows={2}
-              placeholder="Ej. Faltaron 3 cajas, quedaron en almacén del cliente"
-              className="w-full rounded-lg border border-orange-200 bg-white px-3 py-2 text-sm outline-none focus:border-orange-400"
-            />
+      {decidioAlRecoger ? (
+        entregaParcialPrevia && (
+          <div className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+            <AlertTriangle className="h-4 w-4 shrink-0" strokeWidth={2.25} />
+            Se marcó como parcial al recoger — ya se creó el pedido con lo que faltaba.
           </div>
-        )}
-      </div>
+        )
+      ) : (
+        <div>
+          <span className="mb-1.5 block text-sm font-medium text-gray-700">
+            {verificando
+              ? "Después de contar los ítems, ¿cómo llegó?"
+              : `¿Cómo quedó ${articulo} ${accion}?`}
+          </span>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setParcial(false)}
+              className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 font-bold transition ${
+                !parcial
+                  ? "border-green-600 bg-green-600 text-white"
+                  : "border-gray-300 bg-white text-gray-700 hover:border-green-600"
+              }`}
+            >
+              <CheckCircle2 className="h-5 w-5" />
+              Completa
+            </button>
+            <button
+              type="button"
+              onClick={() => setParcial(true)}
+              className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 font-bold transition ${
+                parcial
+                  ? "border-orange-500 bg-orange-500 text-white"
+                  : "border-gray-300 bg-white text-gray-700 hover:border-orange-500"
+              }`}
+            >
+              <AlertTriangle className="h-5 w-5" />
+              Parcial
+            </button>
+          </div>
+          {parcial && (
+            <div className="mt-2 space-y-1.5 rounded-lg border border-orange-200 bg-orange-50 p-3">
+              <label htmlFor="nota_faltante" className="block text-xs font-medium text-orange-900">
+                ¿Qué falta completar? Con esto se crea el pedido pendiente restante.
+              </label>
+              <textarea
+                id="nota_faltante"
+                value={faltante}
+                onChange={(e) => setFaltante(e.target.value)}
+                rows={2}
+                placeholder="Ej. Faltaron 3 cajas, quedaron en almacén del cliente"
+                className="w-full rounded-lg border border-orange-200 bg-white px-3 py-2 text-sm outline-none focus:border-orange-400"
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Aparte de "qué falta" (que alimenta el remanente): esto es un
           comentario libre para cualquier eventualidad, salga completa o no.
@@ -481,9 +627,11 @@ export default function CompletarForm({
       >
         {pending
           ? "Confirmando..."
-          : verificando
-            ? `Cerrar orden (llegó ${parcial ? "parcial" : "completa"})`
-            : `Confirmar ${accion} (marcar como ${accionParticipio}${parcial ? " parcialmente" : ""})`}
+          : decidioAlRecoger
+            ? "Cerrar orden"
+            : verificando
+              ? `Cerrar orden (llegó ${parcial ? "parcial" : "completa"})`
+              : `Confirmar ${accion} (marcar como ${accionParticipio}${parcial ? " parcialmente" : ""})`}
       </button>
       <p className="text-center text-xs text-gray-500">
         {TYPE_LABEL[tipo]} · Al confirmar, la orden se marca como completada.

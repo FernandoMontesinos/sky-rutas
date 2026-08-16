@@ -4,7 +4,7 @@ import { useActionState, useEffect, useRef } from "react";
 import { createUser, type FormResult } from "./actions";
 import { ROLE_LABEL, type UserRole } from "@/lib/types";
 
-const ROLES: UserRole[] = ["vendedor", "almacen", "repartidor", "admin"];
+const ROLES: UserRole[] = ["vendedor", "almacen", "repartidor", "admin", "facturacion"];
 
 export default function CrearUsuarioForm() {
   const [state, action, pending] = useActionState<FormResult, FormData>(createUser, {});

@@ -23,7 +23,7 @@ export default async function ReportesPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requireRole(["admin", "almacen"]);
+  await requireRole(["admin", "almacen", "facturacion"]);
   const filtros = parseFiltros(await searchParams);
   const supabase = await createClient();
 
