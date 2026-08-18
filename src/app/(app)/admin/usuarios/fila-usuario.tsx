@@ -8,6 +8,78 @@ import { ROLE_LABEL, type Profile, type UserRole } from "@/lib/types";
 const ROLES: UserRole[] = ["admin", "vendedor", "almacen", "repartidor", "facturacion"];
 
 /**
+ * Eliminar usuario, con confirmación de por medio: antes un solo clic en
+ * "Eliminar" borraba la cuenta sin preguntar nada — un mal clic en una tabla
+ * densa (como esta) era demasiado fácil y no había vuelta atrás.
+ */
+function EliminarUsuarioButton({ id, nombre }: { id: string; nombre: string }) {
+  const [confirmando, setConfirmando] = useState(false);
+  const [eliminando, setEliminando] = useState(false);
+
+  function confirmar() {
+    setEliminando(true);
+    const fd = new FormData();
+    fd.set("id", id);
+    startTransition(() => {
+      deleteUser(fd);
+    });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setConfirmando(true)}
+        className="text-gray-400 transition hover:text-brand"
+      >
+        Eliminar
+      </button>
+
+      {confirmando && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/30"
+            onClick={() => !eliminando && setConfirmando(false)}
+            aria-hidden
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirmar-eliminar-titulo"
+            className="relative w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
+          >
+            <h3 id="confirmar-eliminar-titulo" className="text-base font-bold text-gray-900">
+              ¿Eliminar a {nombre}?
+            </h3>
+            <p className="mt-1.5 text-sm text-gray-500">
+              Esta acción no se puede deshacer. {nombre} pierde el acceso de inmediato.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmando(false)}
+                disabled={eliminando}
+                className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmar}
+                disabled={eliminando}
+                className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:opacity-60"
+              >
+                {eliminando ? "Eliminando..." : "Sí, eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
  * Una fila de la tabla de usuarios, que se convierte en formulario al tocar
  * "Editar". Se edita en el sitio en vez de abrir otra pantalla porque el
  * cambio típico es de un campo (un apellido mal escrito, alguien que pasa de
@@ -133,10 +205,7 @@ export function FilaUsuario({ u, esYo }: { u: Profile; esYo: boolean }) {
                   {u.activo ? "Desactivar" : "Activar"}
                 </button>
               </form>
-              <form action={deleteUser}>
-                <input type="hidden" name="id" value={u.id} />
-                <button className="text-gray-400 transition hover:text-brand">Eliminar</button>
-              </form>
+              <EliminarUsuarioButton id={u.id} nombre={u.full_name} />
             </>
           )}
         </div>
