@@ -1,9 +1,82 @@
 # Handoff — arranque de la prueba piloto
 
-**Fecha:** 2026-08-09
+**Fecha:** 2026-08-09 (actualizado 2026-08-19, ver §0)
 **Para:** Fernando Montesinos
-**Estado de `master`:** `4ce8d34`, desplegado y verificado en producción
+**Estado de `master`:** `37bc3ea`, desplegado y verificado en producción
 **Producción:** https://sky-rutas.vercel.app
+
+---
+
+## 0. Actualización — 19 de agosto
+
+Diez días de trabajo desde el handoff original (§1 en adelante). Resumen de
+qué está en producción, qué está esperando tu revisión, y qué sigue abierto
+de la lista de aquel entonces.
+
+### 0.1 Ya en `master` (mergeado, desplegado)
+
+**PR #6 — tarjetas, rol Facturación, motivos de no-recojo, recojo parcial**
+([#6](https://github.com/FernandoMontesinos/sky-rutas/pull/6), mergeado)
+
+- Kanban: la hora de cada tarjeta refleja cuándo entró al estado actual
+  (creada/asignada/en tránsito/completada), no siempre la de creación.
+  Formato fecha primero, hora después. Se agrega la inicial de quien creó la
+  orden junto a la del repartidor.
+- Nuevo rol **Facturación**: solo consulta — ve Órdenes, Mapa, Reportes, y
+  descarga guías (ZIP + Excel/CSV). No asigna, edita, completa ni elimina
+  nada.
+- "No se pudo recoger" pasa de texto libre a tres botones (Proveedor
+  cerrado / Proveedor no tiene material listo / Otro).
+- Se limpiaron dos cuentas "Albert" duplicadas sin uso.
+- Migración `35_facturacion_role.sql`: agrega `facturacion` al enum
+  `user_role` (columna `role` de `profiles`).
+
+**Fix directo a `master` — confirmación antes de eliminar usuario**
+(`37bc3ea`)
+
+Un clic en "Eliminar" en `/admin/usuarios` borraba la cuenta al toque, sin
+preguntar. Ahora abre una ventana de confirmación con el nombre de la
+persona antes de tocar la base.
+
+### 0.2 Esperando tu revisión — PR #7 (todavía NO mergeado)
+
+**[PR #7 — Cotizaciones ganan Tránsito, el cierre vuelve a ser de Almacén](https://github.com/FernandoMontesinos/sky-rutas/pull/7)**
+
+Este revierte una parte de la PR #6: el recojo parcial (que el repartidor
+decidiera completo/parcial al recoger) se sacó. Bryan pidió el cambio
+después de ver la PR #6 funcionando en producción — quedó así:
+
+- El repartidor vuelve a tener un solo trabajo, en Pedidos **y**
+  Cotizaciones: sube evidencia (foto de material; en Cotizaciones también
+  guía, con el número ahora opcional) y confirma. No decide nada.
+- Cotizaciones (modalidad Reparto) ganan el estado **En Tránsito**, igual
+  que ya tenían los Pedidos — antes cerraban directo.
+- Completo/Parcial y el cierre quedan exclusivos de Almacén y Admin, para
+  los dos tipos.
+- "No se pudo entregar": mismo mecanismo que "No se pudo recoger", para
+  Cotizaciones (Cliente cerrado / Cliente no estaba / Otro).
+- Oficina/Courier y el atajo de Almacén (cerrar sin esperar al repartidor):
+  sin cambios.
+
+Verificado de punta a punta con usuarios y órdenes de prueba (creados y
+borrados en la misma sesión, nunca tocó datos reales). Falta tu revisión
+visual antes de mergear — el link del preview te lo paso por donde
+hablamos.
+
+### 0.3 De la lista original (§7) — qué sigue pendiente
+
+- **§1.1 (`SUPABASE_SERVICE_ROLE_KEY`)**: parece resuelta — durante esta
+  sesión se creó un usuario nuevo desde `/admin/usuarios` directo en
+  producción sin error, y esa ruta depende de esa variable.
+- **§1.2 (fotos huérfanas + bucket `zz_prueba_rls`)**: el bucket
+  `zz_prueba_rls` **sigue existiendo**, vacío. Sigue pendiente borrarlo a
+  mano desde el panel de Supabase (Storage bloquea el borrado por SQL).
+- **§5.3 (reemplazo de usuarios de prueba)**: `katy@gmail.com` y
+  `albert@gmail.com` ya no están — quedan con correos `@skyrutas.pe`.
+  `admin.prueba@skyrutas.pe` sigue activo (parece que se está usando a
+  propósito como cuenta de prueba general, no urgente).
+- El resto de §5 (buckets privados, policy de borrado de storage, avisos
+  del linter) no se tocó en estos diez días — sigue tal cual estaba.
 
 ---
 
