@@ -14,6 +14,7 @@ export type EventoTipo =
   | "recogida"
   | "recogida_parcial"
   | "no_recogida"
+  | "no_entregado"
   | "dividida"
   | "completada"
   | "parcial"
@@ -26,11 +27,12 @@ export const EVENTO_LABEL: Record<EventoTipo, string> = {
   asignada: "Asignó repartidor",
   desasignada: "Quitó el repartidor",
   modalidad: "Cambió la modalidad",
-  recogida: "Confirmó el recojo",
-  // Distinto de "parcial" a propósito: ese es el cierre (la orden termina),
-  // esto es el recojo (la orden sigue — recién entra a En Tránsito).
+  recogida: "Confirmó",
+  // Ya no se genera (el repartidor no decide parcial) — queda solo para que
+  // el historial de órdenes viejas siga mostrando una etiqueta legible.
   recogida_parcial: "Recogió parcial — falta coordinar el resto",
   no_recogida: "No se pudo recoger",
+  no_entregado: "No se pudo entregar",
   dividida: "Dividió el envío",
   completada: "Cerró la orden",
   parcial: "Cerró la orden como parcial",

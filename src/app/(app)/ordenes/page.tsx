@@ -160,7 +160,8 @@ function OrderCardCompact({ o, sello }: { o: OrderWithNames; sello: string | nul
               className="shrink-0 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-700"
               title={o.no_recogido_motivo ?? undefined}
             >
-              No recogido{o.no_recogido_intentos > 1 && ` ×${o.no_recogido_intentos}`}
+              {o.tipo === "recojo" ? "No recogido" : "No entregado"}
+              {o.no_recogido_intentos > 1 && ` ×${o.no_recogido_intentos}`}
             </span>
           )}
           {o.nota && (
@@ -253,7 +254,8 @@ function OrderCardDetallado({ o, sello }: { o: OrderWithNames; sello: string | n
             )}
             {o.no_recogido_intentos > 0 && (
               <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
-                No recogido{o.no_recogido_intentos > 1 && ` ×${o.no_recogido_intentos}`}
+                {o.tipo === "recojo" ? "No recogido" : "No entregado"}
+                {o.no_recogido_intentos > 1 && ` ×${o.no_recogido_intentos}`}
               </span>
             )}
             {o.nota && (
@@ -359,7 +361,7 @@ function Column({
               <>
                 <div className="flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-red-500">
                   <span className="h-px flex-1 bg-red-200" />
-                  No se pudo recoger
+                  {noRecogidas[0]?.tipo === "entrega" ? "No se pudo entregar" : "No se pudo recoger"}
                   <span className="h-px flex-1 bg-red-200" />
                 </div>
                 {noRecogidas.map((o) => (
@@ -868,8 +870,9 @@ export default async function OrdenesPage({
             </div>
           </section>
 
-          {/* Cotizaciones (Cliente): no pasan por "En Tránsito" — el cliente
-              cuenta la mercadería en el momento de la entrega. */}
+          {/* Cotizaciones (Cliente): modalidad Reparto pasa por "En Tránsito"
+              igual que Pedidos — el repartidor confirma y Almacén cierra.
+              Oficina/courier se saltan ese paso, como siempre. */}
           <section className="space-y-2">
             <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-gray-500">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/10 text-[10px] font-bold text-brand">
@@ -878,8 +881,15 @@ export default async function OrdenesPage({
               Cotizaciones · Cliente
             </h2>
             <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
-              <Column title="Pendientes" color="bg-gray-400" orders={activasDe("entrega", "pendiente")} detallado={detallado} />
+              <Column
+                title="Pendientes"
+                color="bg-gray-400"
+                orders={activasDe("entrega", "pendiente")}
+                detallado={detallado}
+                separarNoRecogidos
+              />
               <Column title="Asignadas" color="bg-amber-500" orders={activasDe("entrega", "asignado")} detallado={detallado} />
+              <Column title="En Tránsito" color="bg-sky-500" orders={activasDe("entrega", "en_transito")} detallado={detallado} />
               <Column
                 title={`Completadas · ${RANGO_LABEL[rango]}`}
                 color="bg-green-500"
@@ -906,12 +916,12 @@ export default async function OrdenesPage({
               fullWidthMobile
             />
           )}
-          {/* Ya recogidas: salen de "Por hacer" al confirmar el recojo, pero
-              siguen visibles porque si el material va directo al cliente es
-              el propio repartidor quien la cierra al entregarla. */}
+          {/* Ya confirmadas: salen de "Por hacer" al confirmar, pero siguen
+              visibles mientras Almacén las cuenta y cierra — el repartidor ya
+              no tiene nada más que hacer con ellas. */}
           {panel === "recogidas" && (
             <Column
-              title="Recogidas (por cerrar)"
+              title="En Tránsito"
               color="bg-sky-500"
               orders={byEstado("en_transito")}
               detallado={detallado}

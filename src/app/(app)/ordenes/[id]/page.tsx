@@ -10,7 +10,7 @@ import { EliminarOrdenButton } from "./eliminar-orden";
 import { ModalidadForm } from "./modalidad-form";
 import { AsignarForm } from "./asignar-form";
 import { AlmacenOverrideCompletar } from "./almacen-override";
-import CompletarForm, { RecojoForm } from "./completar";
+import CompletarForm, { ConfirmarTransitoForm } from "./completar";
 import { DividirEnvioForm } from "./dividir-envio";
 import { EditarOrdenForm } from "./editar-form";
 import { HistorialPanel } from "./historial-panel";
@@ -65,19 +65,18 @@ export default async function OrdenDetallePage({
   // mismo si hace falta (ver AlmacenOverrideCompletar), solo que no se le
   // muestra de entrada para evitar que la marque sin querer.
   const almacenReparto = isAlmacen && order.modalidad === "reparto";
-  const canComplete =
-    order.estado !== "completado" &&
-    (profile.role === "admin" || isAlmacen || (isRepartidor && isMine));
+  // Cerrar la orden (y decidir completo/parcial) es exclusivo de Almacén y
+  // Admin — el repartidor nunca cierra, su trabajo termina en "En Tránsito".
+  const canComplete = order.estado !== "completado" && (profile.role === "admin" || isAlmacen);
 
-  // Un Pedido (Proveedor) que todavía tiene que ir a recoger el repartidor:
-  // él solo sube la guía y confirma el recojo, sin decir si llegó completo
-  // (recibe bultos sellados, no cuenta ítems). Almacén/admin sí pueden
-  // cerrarla directo desde "asignado" — es el caso de los pedidos que no
-  // pasan por un repartidor (Recepción en oficina / Courier).
-  const esRecojoPorConfirmar =
-    order.tipo === "recojo" && order.estado === "asignado" && isRepartidor && isMine;
-  // Ya se recogió y falta contar la mercadería: la cierra quien la cuente
-  // (almacén al recibirla, o el repartidor si fue directo al cliente).
+  // Una orden de modalidad Reparto (Pedido o Cotización) que todavía tiene
+  // que confirmar el repartidor: sube evidencia y pasa a "En Tránsito", sin
+  // decir si llegó completo (eso lo decide Almacén al cerrar). Oficina/
+  // courier no pasan por acá — Almacén/admin las cierra directo desde
+  // "asignado", porque nunca hay nadie recogiendo o entregando en la calle.
+  const puedeConfirmarTransito =
+    order.modalidad === "reparto" && order.estado === "asignado" && isRepartidor && isMine;
+  // Ya se confirmó y falta que Almacén cuente y cierre.
   const estaEnTransito = order.estado === "en_transito";
   // Almacén puede partir la orden en varios envíos mientras no esté cerrada.
   const puedeDividir = canAssign && order.estado !== "completado";
@@ -249,7 +248,7 @@ export default async function OrdenDetallePage({
         </div>
         {order.en_transito_at && (
           <div className="min-w-0">
-            <dt className="text-gray-400">Recogida</dt>
+            <dt className="text-gray-400">{order.tipo === "recojo" ? "Recogida" : "Confirmada"}</dt>
             <dd className="break-words font-medium text-gray-800">{fmt(order.en_transito_at)}</dd>
           </div>
         )}
@@ -336,15 +335,14 @@ export default async function OrdenDetallePage({
       {/* Almacén: despachar la orden en varias guías de remisión. */}
       {puedeDividir && <DividirEnvioForm orderId={order.id} />}
 
-      {/* Paso 1 de un Pedido: el repartidor confirma el recojo (sin contar). */}
-      {esRecojoPorConfirmar && <RecojoForm orderId={order.id} />}
+      {/* Repartidor: confirma (sube evidencia, sin decir si llegó completo). */}
+      {puedeConfirmarTransito && <ConfirmarTransitoForm orderId={order.id} tipo={order.tipo} />}
 
-      {/* Completar / verificar: lo hace quien contó la mercadería.
-          - repartidor: solo si la orden es suya (asignada)
+      {/* Cerrar / contar: exclusivo de Almacén y Admin.
           - almacén en reparto: oculto detrás de un paso extra (ver arriba),
-            salvo que ya esté En Tránsito — ahí verificar SÍ es su trabajo
+            salvo que ya esté En Tránsito — ahí cerrar SÍ es su trabajo
           - almacén en oficina/courier y admin: directo */}
-      {!esRecojoPorConfirmar && canComplete && (isRepartidor ? order.assigned_to : true) && (
+      {!puedeConfirmarTransito && canComplete && (
         almacenReparto && !estaEnTransito ? (
           <AlmacenOverrideCompletar repartidorNombre={order.repartidor?.full_name ?? "el repartidor asignado"}>
             <CompletarForm
@@ -363,9 +361,14 @@ export default async function OrdenDetallePage({
             numeroGuiaActual={order.numero_guia}
             guiasActuales={imagenesGuia}
             materialActual={imagenesMaterial}
-            entregaParcialPrevia={order.entrega_parcial}
           />
         )
+      )}
+
+      {isRepartidor && isMine && estaEnTransito && (
+        <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-800">
+          Ya confirmaste — Almacén se encarga de contar y cerrar la orden.
+        </p>
       )}
 
       {isRepartidor && order.estado !== "completado" && !isMine && (

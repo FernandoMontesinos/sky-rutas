@@ -36,8 +36,8 @@ const NAV_REPARTIDOR: NavEntry[] = [
   { href: "/ordenes", label: "Por hacer", icon: "list-todo" },
   {
     href: "/ordenes?panel=recogidas",
-    label: "Recogidas (por cerrar)",
-    short: "Recogidas",
+    label: "En tránsito",
+    short: "En tránsito",
     icon: "truck",
   },
   { href: "/ordenes?panel=completadas", label: "Completadas", short: "Listas", icon: "check-circle" },
