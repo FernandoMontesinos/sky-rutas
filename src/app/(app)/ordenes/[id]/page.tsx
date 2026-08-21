@@ -113,10 +113,9 @@ export default async function OrdenDetallePage({
     order.estado === "pendiente" &&
     (profile.role === "vendedor" || profile.role === "admin");
 
-  // Eliminar: Ventas solo mientras siga pendiente, Admin siempre.
-  const puedeEliminar =
-    profile.role === "admin" ||
-    (profile.role === "vendedor" && order.estado === "pendiente");
+  // Eliminar: solo Admin. Ventas puede corregir datos (puedeEditar) pero no
+  // borrar la orden — ver deleteOrder en actions.ts y la policy orders_delete.
+  const puedeEliminar = profile.role === "admin";
 
   // Mismos roles que el endpoint /api/export-guias, para no ofrecer un botón
   // que después responde 403.
@@ -411,7 +410,7 @@ export default async function OrdenDetallePage({
         </div>
       )}
 
-      {/* Eliminar (Ventas mientras esté pendiente, Admin siempre) */}
+      {/* Eliminar (solo Admin) */}
       {puedeEliminar && <EliminarOrdenButton orderId={order.id} />}
     </div>
   );

@@ -840,19 +840,14 @@ export async function completeOrder(
 }
 
 /**
- * Elimina una orden. Solo Ventas y Admin: el resto de roles (almacén,
- * repartidor) trabajan sobre la orden pero no son dueños del registro, así que
- * no tienen por qué borrarlo.
- *
- * Ventas solo puede borrar mientras la orden siga Pendiente — igual que para
- * corregirla. Una vez que almacén la tomó ya hay trabajo hecho encima
- * (asignación, guías, historial) y borrarla se lo lleva puesto; a partir de
- * ahí solo Admin. Bloqueada también si tiene hijas (remanente o envío
- * dividido): borrarla dejaría esos enlaces cruzados apuntando a un id
- * inexistente y el hilo de la familia se pierde.
+ * Elimina una orden. Solo Admin: Ventas corrige datos (ver editarOrden) pero
+ * no borra el registro — el resto de roles (almacén, repartidor) trabajan
+ * sobre la orden pero tampoco son dueños del registro. Bloqueada también si
+ * tiene hijas (remanente o envío dividido): borrarla dejaría esos enlaces
+ * cruzados apuntando a un id inexistente y el hilo de la familia se pierde.
  */
 export async function deleteOrder(_prev: FormResult, formData: FormData): Promise<FormResult> {
-  const { profile } = await requireRole(["admin", "vendedor"]);
+  await requireRole(["admin"]);
   const orderId = String(formData.get("order_id") ?? "");
   if (!orderId) return { error: "Orden inválida." };
 
@@ -864,12 +859,6 @@ export async function deleteOrder(_prev: FormResult, formData: FormData): Promis
     .eq("id", orderId)
     .single();
   if (!actual) return { error: "Orden inválida." };
-
-  if (profile.role === "vendedor" && actual.estado !== "pendiente") {
-    return {
-      error: "Esta orden ya está en curso; para eliminarla ahora habla con un administrador.",
-    };
-  }
 
   const { data: hijos } = await supabase
     .from("orders")
