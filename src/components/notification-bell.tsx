@@ -6,6 +6,7 @@ import { Bell } from "lucide-react";
 import { fechaCorta } from "@/lib/fecha";
 import { createClient } from "@/lib/supabase/client";
 import { playNotificationSound } from "@/lib/notification-sound";
+import type { UserRole } from "@/lib/types";
 
 type Notif = {
   id: string;
@@ -26,7 +27,11 @@ function tiempoRelativo(iso: string) {
   return fechaCorta(iso);
 }
 
-export function NotificationBell({ userId }: { userId: string }) {
+export function NotificationBell({ userId, role }: { userId: string; role: UserRole }) {
+  // El sonido de aviso solo suena para Ventas: son quienes esperan la
+  // confirmación de sus órdenes y el pedido fue que a ellos sí les avise en
+  // voz alta. El resto de roles reciben la notificación en silencio.
+  const conSonido = role === "vendedor";
   const [items, setItems] = useState<Notif[]>([]);
   const [open, setOpen] = useState(false);
   const supabaseRef = useRef(createClient());
@@ -52,7 +57,7 @@ export function NotificationBell({ userId }: { userId: string }) {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
         () => {
-          if (!firstLoad.current) playNotificationSound();
+          if (!firstLoad.current && conSonido) playNotificationSound();
           load();
         }
       )
@@ -67,7 +72,7 @@ export function NotificationBell({ userId }: { userId: string }) {
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
-  }, [userId, load]);
+  }, [userId, load, conSonido]);
 
   const unread = items.filter((n) => !n.leida).length;
 

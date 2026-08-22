@@ -79,7 +79,7 @@ export default async function AppLayout({
               </span>
               <span className="hidden sm:inline"> · {ROLE_LABEL[profile.role]}</span>
             </span>
-            <NotificationBell userId={userId} />
+            <NotificationBell userId={userId} role={profile.role} />
             <Link
               href="/cuenta"
               aria-label="Mi cuenta"

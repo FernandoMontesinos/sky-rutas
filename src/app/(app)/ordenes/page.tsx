@@ -34,6 +34,17 @@ function inicial(nombre: string | undefined) {
   return nombre?.trim()?.[0]?.toUpperCase() ?? "?";
 }
 
+/**
+ * Título de la tarjeta: la empresa y, si la orden tiene proyecto, el proyecto
+ * a continuación — ej. "SAN MARTIN - INMACULADA". Almacén/Ventas identifican
+ * la entrega por la obra, no solo por el cliente. Sin cliente (caso raro) cae
+ * al número de pedido.
+ */
+function tituloEmpresa(o: OrderWithNames): string {
+  const base = o.cliente || `#${o.numero_pedido}`;
+  return o.proyecto ? `${base} - ${o.proyecto}` : base;
+}
+
 const SELECT =
   "*, creador:profiles!orders_created_by_fkey(full_name), repartidor:profiles!orders_assigned_to_fkey(full_name)";
 
@@ -148,7 +159,7 @@ function OrderCardCompact({ o, sello }: { o: OrderWithNames; sello: string | nul
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-sm font-bold text-gray-900">
-            {o.cliente || `#${o.numero_pedido}`}
+            {tituloEmpresa(o)}
           </span>
           {o.entrega_parcial && (
             <span className="shrink-0 rounded-full bg-orange-100 px-1.5 py-0.5 text-[9px] font-bold text-orange-800">
@@ -242,7 +253,7 @@ function OrderCardDetallado({ o, sello }: { o: OrderWithNames; sello: string | n
           {/* Igual que en la compacta: manda el nombre de la empresa. */}
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="truncate font-bold text-gray-900">
-              {o.cliente || `#${o.numero_pedido}`}
+              {tituloEmpresa(o)}
             </span>
             <TypeBadge tipo={o.tipo} />
             <ModalidadBadge modalidad={o.modalidad} />
@@ -267,9 +278,7 @@ function OrderCardDetallado({ o, sello }: { o: OrderWithNames; sello: string | n
               {sello && <span className="text-gray-600">{sello}</span>}
             </div>
           )}
-          {o.proyecto && (
-            <div className="truncate text-xs text-gray-500">Proyecto: {o.proyecto}</div>
-          )}
+          {/* El proyecto ya va en el título (ver tituloEmpresa). */}
           {o.no_recogido_motivo && (
             <div className="truncate text-xs text-red-600" title={o.no_recogido_motivo}>
               {o.no_recogido_motivo}
@@ -375,6 +384,52 @@ function Column({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * La etapa "Asignadas" partida en una columna por repartidor, para ver de un
+ * vistazo qué lleva cada uno (Carlos en una, Albert en otra, etc.) en vez de
+ * todos mezclados. Las columnas se arman solas a partir de quién tiene
+ * órdenes asignadas, en orden alfabético; si no hay ninguna, se muestra una
+ * sola columna "Asignadas" vacía para no dejar un hueco.
+ */
+function ColumnasAsignadas({
+  orders,
+  detallado,
+}: {
+  orders: OrderWithNames[];
+  detallado: boolean;
+}) {
+  if (orders.length === 0) {
+    return <Column title="Asignadas" color="bg-amber-500" orders={[]} detallado={detallado} />;
+  }
+
+  const grupos = new Map<string, { nombre: string; orders: OrderWithNames[] }>();
+  for (const o of orders) {
+    const clave = o.assigned_to ?? "sin";
+    const nombre = o.repartidor?.full_name ?? "Sin repartidor";
+    const grupo = grupos.get(clave) ?? { nombre, orders: [] };
+    grupo.orders.push(o);
+    grupos.set(clave, grupo);
+  }
+
+  const columnas = [...grupos.values()].sort((a, b) =>
+    a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" })
+  );
+
+  return (
+    <>
+      {columnas.map((g) => (
+        <Column
+          key={g.nombre}
+          title={g.nombre}
+          color="bg-amber-500"
+          orders={g.orders}
+          detallado={detallado}
+        />
+      ))}
+    </>
   );
 }
 
@@ -857,7 +912,7 @@ export default async function OrdenesPage({
                 detallado={detallado}
                 separarNoRecogidos
               />
-              <Column title="Asignadas" color="bg-amber-500" orders={activasDe("recojo", "asignado")} detallado={detallado} />
+              <ColumnasAsignadas orders={activasDe("recojo", "asignado")} detallado={detallado} />
               <Column title="En Tránsito" color="bg-sky-500" orders={activasDe("recojo", "en_transito")} detallado={detallado} />
               <Column
                 title={`Completadas · ${RANGO_LABEL[rango]}`}
@@ -879,7 +934,7 @@ export default async function OrdenesPage({
             </h2>
             <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
               <Column title="Pendientes" color="bg-gray-400" orders={activasDe("entrega", "pendiente")} detallado={detallado} />
-              <Column title="Asignadas" color="bg-amber-500" orders={activasDe("entrega", "asignado")} detallado={detallado} />
+              <ColumnasAsignadas orders={activasDe("entrega", "asignado")} detallado={detallado} />
               <Column
                 title={`Completadas · ${RANGO_LABEL[rango]}`}
                 color="bg-green-500"

@@ -105,6 +105,22 @@ export default async function OrdenDetallePage({
     .order("created_at", { ascending: false });
   const eventos = (eventosData ?? []) as unknown as OrderEvent[];
 
+  // Navegación anterior/siguiente entre órdenes activas, para recorrerlas sin
+  // volver al tablero. Mismo orden que el tablero (las más nuevas primero) y,
+  // para el repartidor, solo las suyas. Si esta orden ya no está activa (p. ej.
+  // ya completada), no tiene vecinos y los botones no se muestran.
+  let navQuery = supabase
+    .from("orders")
+    .select("id")
+    .in("estado", ["pendiente", "asignado", "en_transito"])
+    .order("created_at", { ascending: false });
+  if (isRepartidor) navQuery = navQuery.eq("assigned_to", userId);
+  const { data: navData } = await navQuery;
+  const navIds = (navData ?? []).map((o) => o.id as string);
+  const navIdx = navIds.indexOf(order.id);
+  const prevId = navIdx > 0 ? navIds[navIdx - 1] : null;
+  const nextId = navIdx >= 0 && navIdx < navIds.length - 1 ? navIds[navIdx + 1] : null;
+
   // Ventas corrige datos solo mientras nadie la haya tomado: después ya se
   // usaron para despachar. Cualquier vendedor puede, no solo quien la creó.
   // Almacén queda fuera: estos son datos de la venta, no del despacho — si ve
@@ -135,12 +151,45 @@ export default async function OrdenDetallePage({
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5">
-      <Link
-        href="/ordenes"
-        className="inline-flex items-center gap-1 py-1 text-sm font-medium text-gray-500 hover:text-brand"
-      >
-        ‹ Volver a órdenes
-      </Link>
+      <div className="flex items-center justify-between gap-2">
+        <Link
+          href="/ordenes"
+          className="inline-flex items-center gap-1 py-1 text-sm font-medium text-gray-500 hover:text-brand"
+        >
+          ‹ Volver a órdenes
+        </Link>
+
+        {/* Recorrer las órdenes activas sin volver al tablero. Si no hay
+            vecino en un sentido, el botón queda deshabilitado (gris). */}
+        {(prevId || nextId) && (
+          <div className="flex items-center gap-2">
+            {prevId ? (
+              <Link
+                href={`/ordenes/${prevId}`}
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-600 transition hover:border-brand hover:text-brand"
+              >
+                ‹ Anterior
+              </Link>
+            ) : (
+              <span className="cursor-not-allowed rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-300">
+                ‹ Anterior
+              </span>
+            )}
+            {nextId ? (
+              <Link
+                href={`/ordenes/${nextId}`}
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-600 transition hover:border-brand hover:text-brand"
+              >
+                Siguiente ›
+              </Link>
+            ) : (
+              <span className="cursor-not-allowed rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-300">
+                Siguiente ›
+              </span>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-bold text-gray-900">#{order.numero_pedido}</h1>
