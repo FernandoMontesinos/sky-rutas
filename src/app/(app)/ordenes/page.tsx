@@ -45,6 +45,20 @@ function tituloEmpresa(o: OrderWithNames): string {
   return o.proyecto ? `${base} - ${o.proyecto}` : base;
 }
 
+/**
+ * De momento el tablero de "Asignadas" solo muestra columna para estos
+ * repartidores (pedido de Fernando: Carlos y Albert; Daniel no). El match es
+ * por el inicio del nombre, sin distinguir mayúsculas/tildes. Para volver a
+ * mostrarlos a todos, dejar la lista vacía: `[]`.
+ */
+const REPARTIDORES_TABLERO = ["carlos", "albert"];
+
+function repartidorVisible(nombre: string | undefined): boolean {
+  if (REPARTIDORES_TABLERO.length === 0) return true;
+  const n = (nombre ?? "").toLowerCase();
+  return REPARTIDORES_TABLERO.some((r) => n.startsWith(r));
+}
+
 const SELECT =
   "*, creador:profiles!orders_created_by_fkey(full_name), repartidor:profiles!orders_assigned_to_fkey(full_name)";
 
@@ -389,43 +403,39 @@ function Column({
 
 /**
  * La etapa "Asignadas" partida en una columna por repartidor, para ver de un
- * vistazo qué lleva cada uno (Carlos en una, Albert en otra, etc.) en vez de
- * todos mezclados. Las columnas se arman solas a partir de quién tiene
- * órdenes asignadas, en orden alfabético; si no hay ninguna, se muestra una
- * sola columna "Asignadas" vacía para no dejar un hueco.
+ * vistazo qué lleva cada uno (Carlos en una, Albert en otra) en vez de todos
+ * mezclados. De momento solo se muestran los repartidores de
+ * REPARTIDORES_TABLERO; sus columnas aparecen siempre —aunque estén vacías—
+ * para que el tablero no cambie de forma. Las órdenes asignadas a un
+ * repartidor fuera de esa lista (ej. Daniel) no se muestran aquí.
  */
 function ColumnasAsignadas({
   orders,
+  repartidores,
   detallado,
 }: {
   orders: OrderWithNames[];
+  repartidores: Profile[];
   detallado: boolean;
 }) {
-  if (orders.length === 0) {
-    return <Column title="Asignadas" color="bg-amber-500" orders={[]} detallado={detallado} />;
-  }
+  const visibles = repartidores
+    .filter((r) => repartidorVisible(r.full_name))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name, "es", { sensitivity: "base" }));
 
-  const grupos = new Map<string, { nombre: string; orders: OrderWithNames[] }>();
-  for (const o of orders) {
-    const clave = o.assigned_to ?? "sin";
-    const nombre = o.repartidor?.full_name ?? "Sin repartidor";
-    const grupo = grupos.get(clave) ?? { nombre, orders: [] };
-    grupo.orders.push(o);
-    grupos.set(clave, grupo);
+  // Sin lista (o nadie coincide): se vuelve al comportamiento de una sola
+  // columna con todas las asignadas, para no ocultar órdenes por accidente.
+  if (visibles.length === 0) {
+    return <Column title="Asignadas" color="bg-amber-500" orders={orders} detallado={detallado} />;
   }
-
-  const columnas = [...grupos.values()].sort((a, b) =>
-    a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" })
-  );
 
   return (
     <>
-      {columnas.map((g) => (
+      {visibles.map((r) => (
         <Column
-          key={g.nombre}
-          title={g.nombre}
+          key={r.id}
+          title={r.full_name}
           color="bg-amber-500"
-          orders={g.orders}
+          orders={orders.filter((o) => o.assigned_to === r.id)}
           detallado={detallado}
         />
       ))}
@@ -912,7 +922,7 @@ export default async function OrdenesPage({
                 detallado={detallado}
                 separarNoRecogidos
               />
-              <ColumnasAsignadas orders={activasDe("recojo", "asignado")} detallado={detallado} />
+              <ColumnasAsignadas orders={activasDe("recojo", "asignado")} repartidores={repartidores} detallado={detallado} />
               <Column title="En Tránsito" color="bg-sky-500" orders={activasDe("recojo", "en_transito")} detallado={detallado} />
               <Column
                 title={`Completadas · ${RANGO_LABEL[rango]}`}
@@ -934,7 +944,7 @@ export default async function OrdenesPage({
             </h2>
             <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
               <Column title="Pendientes" color="bg-gray-400" orders={activasDe("entrega", "pendiente")} detallado={detallado} />
-              <ColumnasAsignadas orders={activasDe("entrega", "asignado")} detallado={detallado} />
+              <ColumnasAsignadas orders={activasDe("entrega", "asignado")} repartidores={repartidores} detallado={detallado} />
               <Column
                 title={`Completadas · ${RANGO_LABEL[rango]}`}
                 color="bg-green-500"
