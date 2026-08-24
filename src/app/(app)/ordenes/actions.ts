@@ -171,7 +171,10 @@ export async function createOrder(
   _prev: FormResult,
   formData: FormData
 ): Promise<FormResult> {
-  const { userId } = await requireRole(["vendedor", "admin"]);
+  // Almacén también crea órdenes para casos especiales (p. ej. mandar a
+  // bordar): no toda orden nace de una venta. Editar datos de la venta sigue
+  // siendo solo de Ventas/Admin (ver editarOrden).
+  const { userId } = await requireRole(["vendedor", "almacen", "admin"]);
 
   const numero = String(formData.get("numero_pedido") ?? "").trim();
   const cliente = String(formData.get("cliente") ?? "").trim() || null;

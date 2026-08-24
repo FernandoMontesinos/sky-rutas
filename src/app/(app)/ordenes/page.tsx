@@ -34,6 +34,31 @@ function inicial(nombre: string | undefined) {
   return nombre?.trim()?.[0]?.toUpperCase() ?? "?";
 }
 
+/**
+ * Título de la tarjeta: la empresa y, si la orden tiene proyecto, el proyecto
+ * a continuación — ej. "SAN MARTIN - INMACULADA". Almacén/Ventas identifican
+ * la entrega por la obra, no solo por el cliente. Sin cliente (caso raro) cae
+ * al número de pedido.
+ */
+function tituloEmpresa(o: OrderWithNames): string {
+  const base = o.cliente || `#${o.numero_pedido}`;
+  return o.proyecto ? `${base} - ${o.proyecto}` : base;
+}
+
+/**
+ * De momento el tablero de "Asignadas" solo muestra columna para estos
+ * repartidores (pedido de Fernando: Carlos y Albert; Daniel no). El match es
+ * por el inicio del nombre, sin distinguir mayúsculas/tildes. Para volver a
+ * mostrarlos a todos, dejar la lista vacía: `[]`.
+ */
+const REPARTIDORES_TABLERO = ["carlos", "albert"];
+
+function repartidorVisible(nombre: string | undefined): boolean {
+  if (REPARTIDORES_TABLERO.length === 0) return true;
+  const n = (nombre ?? "").toLowerCase();
+  return REPARTIDORES_TABLERO.some((r) => n.startsWith(r));
+}
+
 const SELECT =
   "*, creador:profiles!orders_created_by_fkey(full_name), repartidor:profiles!orders_assigned_to_fkey(full_name)";
 
@@ -148,7 +173,7 @@ function OrderCardCompact({ o, sello }: { o: OrderWithNames; sello: string | nul
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-sm font-bold text-gray-900">
-            {o.cliente || `#${o.numero_pedido}`}
+            {tituloEmpresa(o)}
           </span>
           {o.entrega_parcial && (
             <span className="shrink-0 rounded-full bg-orange-100 px-1.5 py-0.5 text-[9px] font-bold text-orange-800">
@@ -242,7 +267,7 @@ function OrderCardDetallado({ o, sello }: { o: OrderWithNames; sello: string | n
           {/* Igual que en la compacta: manda el nombre de la empresa. */}
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="truncate font-bold text-gray-900">
-              {o.cliente || `#${o.numero_pedido}`}
+              {tituloEmpresa(o)}
             </span>
             <TypeBadge tipo={o.tipo} />
             <ModalidadBadge modalidad={o.modalidad} />
@@ -267,9 +292,7 @@ function OrderCardDetallado({ o, sello }: { o: OrderWithNames; sello: string | n
               {sello && <span className="text-gray-600">{sello}</span>}
             </div>
           )}
-          {o.proyecto && (
-            <div className="truncate text-xs text-gray-500">Proyecto: {o.proyecto}</div>
-          )}
+          {/* El proyecto ya va en el título (ver tituloEmpresa). */}
           {o.no_recogido_motivo && (
             <div className="truncate text-xs text-red-600" title={o.no_recogido_motivo}>
               {o.no_recogido_motivo}
@@ -375,6 +398,48 @@ function Column({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * La etapa "Asignadas" partida en una columna por repartidor, para ver de un
+ * vistazo qué lleva cada uno (Carlos en una, Albert en otra) en vez de todos
+ * mezclados. De momento solo se muestran los repartidores de
+ * REPARTIDORES_TABLERO; sus columnas aparecen siempre —aunque estén vacías—
+ * para que el tablero no cambie de forma. Las órdenes asignadas a un
+ * repartidor fuera de esa lista (ej. Daniel) no se muestran aquí.
+ */
+function ColumnasAsignadas({
+  orders,
+  repartidores,
+  detallado,
+}: {
+  orders: OrderWithNames[];
+  repartidores: Profile[];
+  detallado: boolean;
+}) {
+  const visibles = repartidores
+    .filter((r) => repartidorVisible(r.full_name))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name, "es", { sensitivity: "base" }));
+
+  // Sin lista (o nadie coincide): se vuelve al comportamiento de una sola
+  // columna con todas las asignadas, para no ocultar órdenes por accidente.
+  if (visibles.length === 0) {
+    return <Column title="Asignadas" color="bg-amber-500" orders={orders} detallado={detallado} />;
+  }
+
+  return (
+    <>
+      {visibles.map((r) => (
+        <Column
+          key={r.id}
+          title={r.full_name}
+          color="bg-amber-500"
+          orders={orders.filter((o) => o.assigned_to === r.id)}
+          detallado={detallado}
+        />
+      ))}
+    </>
   );
 }
 
@@ -857,7 +922,7 @@ export default async function OrdenesPage({
                 detallado={detallado}
                 separarNoRecogidos
               />
-              <Column title="Asignadas" color="bg-amber-500" orders={activasDe("recojo", "asignado")} detallado={detallado} />
+              <ColumnasAsignadas orders={activasDe("recojo", "asignado")} repartidores={repartidores} detallado={detallado} />
               <Column title="En Tránsito" color="bg-sky-500" orders={activasDe("recojo", "en_transito")} detallado={detallado} />
               <Column
                 title={`Completadas · ${RANGO_LABEL[rango]}`}
@@ -879,7 +944,7 @@ export default async function OrdenesPage({
             </h2>
             <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
               <Column title="Pendientes" color="bg-gray-400" orders={activasDe("entrega", "pendiente")} detallado={detallado} />
-              <Column title="Asignadas" color="bg-amber-500" orders={activasDe("entrega", "asignado")} detallado={detallado} />
+              <ColumnasAsignadas orders={activasDe("entrega", "asignado")} repartidores={repartidores} detallado={detallado} />
               <Column
                 title={`Completadas · ${RANGO_LABEL[rango]}`}
                 color="bg-green-500"

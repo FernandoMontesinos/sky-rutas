@@ -14,7 +14,7 @@ const NAV: NavItem[] = [
   // Inicio no aplica al repartidor: su pantalla es la lista de órdenes y la
   // home lo redirige ahí (ver app/(app)/page.tsx).
   { href: "/", label: "Inicio", icon: "home", roles: ["admin", "vendedor", "almacen"] },
-  { href: "/ordenes/nueva", label: "Nueva orden", short: "Nueva", icon: "package-plus", roles: ["admin", "vendedor"] },
+  { href: "/ordenes/nueva", label: "Nueva orden", short: "Nueva", icon: "package-plus", roles: ["admin", "vendedor", "almacen"] },
   { href: "/ordenes", label: "Órdenes", icon: "clipboard-list", roles: ["admin", "vendedor", "almacen", "facturacion"] },
   { href: "/mapa", label: "Mapa", icon: "map", roles: ["admin", "almacen", "vendedor", "facturacion"] },
   { href: "/reportes", label: "Reportes", icon: "bar-chart", roles: ["admin", "almacen", "facturacion"] },
@@ -79,7 +79,7 @@ export default async function AppLayout({
               </span>
               <span className="hidden sm:inline"> · {ROLE_LABEL[profile.role]}</span>
             </span>
-            <NotificationBell userId={userId} />
+            <NotificationBell userId={userId} role={profile.role} />
             <Link
               href="/cuenta"
               aria-label="Mi cuenta"
