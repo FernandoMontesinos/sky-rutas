@@ -360,7 +360,10 @@ function Column({
 
   return (
     <div
-      className={`flex shrink-0 flex-col rounded-2xl bg-gray-100 p-2 sm:w-auto sm:flex-1 ${
+      // min-w-0 + un mínimo legible: sin min-w-0 el `flex-1` no puede encoger
+      // la columna por debajo del ancho de su contenido (los nombres largos de
+      // empresa la estiraban), y el tablero terminaba desbordando la página.
+      className={`flex shrink-0 flex-col rounded-2xl bg-gray-100 p-2 sm:w-auto sm:min-w-0 sm:flex-1 sm:basis-64 ${
         fullWidthMobile ? "w-full" : "w-72 snap-start"
       }`}
     >
@@ -920,7 +923,12 @@ export default async function OrdenesPage({
               </span>
               Pedidos · Proveedor
             </h2>
-            <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
+            {/* El scroll horizontal vive SIEMPRE dentro del tablero, también en
+                escritorio. Con `sm:overflow-visible` las columnas desbordaban
+                la página entera: el header es sticky y solo cubre el ancho de
+                la ventana, así que al desplazarse a la derecha quedaba una
+                franja gris sin header. */}
+            <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none">
               <Column
                 title="Pendientes"
                 color="bg-gray-400"
@@ -948,7 +956,12 @@ export default async function OrdenesPage({
               </span>
               Cotizaciones · Cliente
             </h2>
-            <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none sm:overflow-visible">
+            {/* El scroll horizontal vive SIEMPRE dentro del tablero, también en
+                escritorio. Con `sm:overflow-visible` las columnas desbordaban
+                la página entera: el header es sticky y solo cubre el ancho de
+                la ventana, así que al desplazarse a la derecha quedaba una
+                franja gris sin header. */}
+            <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none">
               <Column title="Pendientes" color="bg-gray-400" orders={activasDe("entrega", "pendiente")} detallado={detallado} />
               <ColumnasAsignadas orders={activasDe("entrega", "asignado")} repartidores={repartidores} detallado={detallado} />
               <Column

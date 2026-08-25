@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Download, GitBranch } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { fechaHoraCorta } from "@/lib/fecha";
+import { nombreArchivo, urlDescarga } from "@/lib/descarga";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
 import { ImageGallery } from "@/components/image-gallery";
@@ -254,6 +255,7 @@ export default async function OrdenDetallePage({
             urls={imagenesOrden}
             alt="Imagen de la orden"
             orderId={puedeEditarAdjuntos ? order.id : undefined}
+            descargaPrefijo={`orden-${order.numero_pedido}`}
           />
         </div>
       )}
@@ -447,23 +449,36 @@ export default async function OrdenDetallePage({
                 que es donde tiene sentido (muchas órdenes de una vez). */}
             {puedeDescargarGuias && (
               <span className="ml-auto inline-flex flex-wrap items-center gap-1">
-                {imagenesGuia.map((url, i) => (
-                  <a
-                    key={url}
-                    href={url}
-                    download
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-600 transition hover:border-brand hover:text-brand"
-                  >
-                    <Download className="h-3.5 w-3.5" strokeWidth={2.25} />
-                    Descargar{imagenesGuia.length > 1 ? ` ${i + 1}` : ""}
-                  </a>
-                ))}
+                {imagenesGuia.map((url, i) => {
+                  const nombre = nombreArchivo(
+                    `guia-${order.numero_guia || order.numero_pedido}`,
+                    url,
+                    i,
+                    imagenesGuia.length
+                  );
+                  return (
+                    <a
+                      key={url}
+                      // ?download hace que Storage responda como adjunto: sin
+                      // eso el navegador solo abría la imagen en otra pestaña
+                      // (el atributo `download` se ignora entre dominios).
+                      href={urlDescarga(url, nombre)}
+                      download={nombre}
+                      className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-600 transition hover:border-brand hover:text-brand"
+                    >
+                      <Download className="h-3.5 w-3.5" strokeWidth={2.25} />
+                      Descargar{imagenesGuia.length > 1 ? ` ${i + 1}` : ""}
+                    </a>
+                  );
+                })}
               </span>
             )}
           </h2>
-          <ImageGallery urls={imagenesGuia} alt="Foto de la guía" />
+          <ImageGallery
+            urls={imagenesGuia}
+            alt="Foto de la guía"
+            descargaPrefijo={`guia-${order.numero_guia || order.numero_pedido}`}
+          />
         </div>
       )}
 
@@ -473,7 +488,11 @@ export default async function OrdenDetallePage({
           <h2 className="mb-1 text-sm font-medium text-gray-500">
             Material {imagenesMaterial.length > 1 && `(${imagenesMaterial.length} fotos)`}
           </h2>
-          <ImageGallery urls={imagenesMaterial} alt="Foto del material" />
+          <ImageGallery
+            urls={imagenesMaterial}
+            alt="Foto del material"
+            descargaPrefijo={`material-${order.numero_pedido}`}
+          />
         </div>
       )}
 

@@ -1,5 +1,6 @@
 import { FileText, ExternalLink, X, Download } from "lucide-react";
 import { eliminarAdjunto } from "@/app/(app)/ordenes/actions";
+import { nombreArchivo, urlDescarga } from "@/lib/descarga";
 
 function esPdf(url: string) {
   return url.split("?")[0].toLowerCase().endsWith(".pdf");
@@ -10,13 +11,22 @@ function esPdf(url: string) {
  * cuando se mira UNA orden, lo que se necesita es el archivo listo para
  * adjuntar a un correo. El ZIP sigue en Reportes, para bajar muchas de golpe.
  */
-function BotonDescargar({ url, esquina = false }: { url: string; esquina?: boolean }) {
+function BotonDescargar({
+  url,
+  nombre,
+  esquina = false,
+}: {
+  url: string;
+  nombre: string;
+  esquina?: boolean;
+}) {
   return (
     <a
-      href={url}
-      download
-      target="_blank"
-      rel="noopener noreferrer"
+      // Sin target="_blank": con ?download el servidor responde como adjunto y
+      // el navegador descarga sin salir de la página. Abrir pestaña nueva solo
+      // dejaba la imagen a la vista, que es justo lo que se quería evitar.
+      href={urlDescarga(url, nombre)}
+      download={nombre}
       aria-label="Descargar este archivo"
       title="Descargar este archivo"
       className={
@@ -73,10 +83,12 @@ function PdfCard({ url, label }: { url: string; label: string }) {
 function PdfEmbed({
   url,
   label,
+  nombre,
   eliminar,
 }: {
   url: string;
   label: string;
+  nombre: string;
   eliminar?: { orderId: string };
 }) {
   return (
@@ -92,7 +104,7 @@ function PdfEmbed({
           <span className="flex-1 truncate">{label}</span>
           <ExternalLink className="h-3.5 w-3.5 shrink-0 text-gray-400" strokeWidth={2} />
         </a>
-        <BotonDescargar url={url} />
+        <BotonDescargar url={url} nombre={nombre} />
         {eliminar && (
           <form action={eliminarAdjunto}>
             <input type="hidden" name="order_id" value={eliminar.orderId} />
@@ -129,18 +141,25 @@ export function ImageGallery({
   urls,
   alt,
   orderId,
+  descargaPrefijo,
 }: {
   urls: string[];
   alt: string;
   orderId?: string;
+  /** Con qué nombre se guardan los archivos al descargarlos (ej. "guia-S15341"). */
+  descargaPrefijo?: string;
 }) {
   if (urls.length === 0) return null;
+
+  const prefijo = descargaPrefijo ?? alt;
+  const nombreDe = (url: string, i: number) => nombreArchivo(prefijo, url, i, urls.length);
 
   if (urls.length === 1) {
     return esPdf(urls[0]) ? (
       <PdfEmbed
         url={urls[0]}
         label={`${alt} (PDF)`}
+        nombre={nombreDe(urls[0], 0)}
         eliminar={orderId ? { orderId } : undefined}
       />
     ) : (
@@ -151,7 +170,7 @@ export function ImageGallery({
           alt={alt}
           className="w-full rounded-xl border border-gray-200 bg-white object-contain"
         />
-        <BotonDescargar url={urls[0]} esquina />
+        <BotonDescargar url={urls[0]} nombre={nombreDe(urls[0], 0)} esquina />
         {orderId && <BotonEliminar orderId={orderId} url={urls[0]} />}
       </div>
     );
@@ -163,7 +182,7 @@ export function ImageGallery({
         esPdf(url) ? (
           <div key={url} className="relative">
             <PdfCard url={url} label={`${alt} ${i + 1} (PDF)`} />
-            <BotonDescargar url={url} esquina />
+            <BotonDescargar url={url} nombre={nombreDe(url, i)} esquina />
             {orderId && <BotonEliminar orderId={orderId} url={url} />}
           </div>
         ) : (
@@ -176,7 +195,7 @@ export function ImageGallery({
                 className="h-32 w-full rounded-xl border border-gray-200 bg-white object-cover"
               />
             </a>
-            <BotonDescargar url={url} esquina />
+            <BotonDescargar url={url} nombre={nombreDe(url, i)} esquina />
             {orderId && <BotonEliminar orderId={orderId} url={url} />}
           </div>
         )
