@@ -654,7 +654,11 @@ export default async function OrdenesPage({
   // esa pantalla; de sm en adelante se ven siempre, como antes.
   const controles = (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      {/* Sin justify-between: cuando el grupo de la izquierda no se renderiza
+          (Kanban/Tabla solo aparece fuera de "Mi ruta") quedaba un hueco entre
+          los dos bloques. Con el margen automático en el segundo, Compacta/
+          Detallada se pega a la derecha solo si hay algo a su izquierda. */}
+      <div className="flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap items-center gap-2">
           {isRepartidor && (
             <div className="inline-flex rounded-xl bg-gray-100 p-1">
@@ -706,7 +710,7 @@ export default async function OrdenesPage({
         </div>
 
         {formato === "kanban" && (
-          <div className="inline-flex rounded-xl bg-gray-100 p-1">
+          <div className="inline-flex rounded-xl bg-gray-100 p-1 sm:ml-auto">
             <Link
               href={href({ densidad: undefined })}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
@@ -879,7 +883,9 @@ export default async function OrdenesPage({
         <h1 className="text-2xl font-bold text-gray-900">
           {isRepartidor ? (verTodas ? "Toda la ruta" : "Mi ruta") : "Tablero de órdenes"}
         </h1>
-        {(profile.role === "admin" || profile.role === "vendedor") && (
+        {(profile.role === "admin" ||
+          profile.role === "vendedor" ||
+          profile.role === "almacen") && (
           <Link
             href="/ordenes/nueva"
             className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-dark"

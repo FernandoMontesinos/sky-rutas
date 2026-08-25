@@ -891,6 +891,63 @@ export async function deleteOrder(_prev: FormResult, formData: FormData): Promis
 }
 
 /**
+ * Agrega uno o más PDF/imágenes a una orden ya creada. Es la contraparte de
+ * `eliminarAdjunto`: hasta ahora se podía quitar el archivo equivocado pero no
+ * subir el correcto, y había que borrar la orden y rehacerla.
+ *
+ * Mismos permisos que quitar (ver eliminarAdjunto): Ventas mientras la orden
+ * siga Pendiente, Almacén sobre las que él mismo creó, y Admin siempre.
+ * Los archivos nuevos se agregan al final, sin tocar los que ya estaban.
+ */
+export async function agregarAdjuntos(
+  _prev: FormResult,
+  formData: FormData
+): Promise<FormResult> {
+  const { userId, profile } = await requireRole(["admin", "vendedor", "almacen"]);
+
+  const orderId = String(formData.get("order_id") ?? "");
+  const archivos = formData
+    .getAll("imagenes")
+    .filter((f): f is File => f instanceof File && f.size > 0);
+
+  if (!orderId) return { error: "Orden inválida." };
+  if (archivos.length === 0) return { error: "Elige al menos un archivo." };
+
+  const supabase = await createClient();
+  const { data: order } = await supabase
+    .from("orders")
+    .select("imagenes_urls, estado, created_by")
+    .eq("id", orderId)
+    .single();
+  if (!order) return { error: "Orden inválida." };
+
+  if (profile.role === "vendedor" && order.estado !== "pendiente") {
+    return { error: "Esta orden ya está en curso; pide a un administrador que la corrija." };
+  }
+  if (profile.role === "almacen" && order.created_by !== userId) {
+    return { error: "Solo puedes cambiar los archivos de las órdenes que tú creaste." };
+  }
+
+  const { urls, error: upErr } = await uploadMany(supabase, "ordenes", userId, archivos);
+  if (upErr) return { error: "No se pudo subir el archivo: " + upErr };
+
+  const actuales: string[] = order.imagenes_urls ?? [];
+  const todas = [...actuales, ...urls];
+
+  const { error } = await supabase
+    .from("orders")
+    .update({ imagenes_urls: todas, imagen_url: todas[0] ?? null })
+    .eq("id", orderId);
+  if (error) return { error: error.message };
+
+  await registrarEvento(supabase, orderId, "adjunto_agregado");
+
+  revalidatePath(`/ordenes/${orderId}`);
+  revalidatePath("/ordenes");
+  return {};
+}
+
+/**
  * Quita un PDF/imagen adjunto a la orden (no la orden completa — eso es
  * `deleteOrder`).
  *
@@ -903,7 +960,7 @@ export async function deleteOrder(_prev: FormResult, formData: FormData): Promis
  * 30_vendedor_adjuntos.sql).
  */
 export async function eliminarAdjunto(formData: FormData): Promise<void> {
-  const { profile } = await requireRole(["admin", "vendedor"]);
+  const { userId, profile } = await requireRole(["admin", "vendedor", "almacen"]);
 
   const orderId = String(formData.get("order_id") ?? "");
   const url = String(formData.get("url") ?? "");
@@ -912,11 +969,13 @@ export async function eliminarAdjunto(formData: FormData): Promise<void> {
   const supabase = await createClient();
   const { data: order } = await supabase
     .from("orders")
-    .select("imagen_url, imagenes_urls, estado")
+    .select("imagen_url, imagenes_urls, estado, created_by")
     .eq("id", orderId)
     .single();
   if (!order) return;
   if (profile.role === "vendedor" && order.estado !== "pendiente") return;
+  // Almacén solo sobre las órdenes que él mismo creó (ver agregarAdjuntos).
+  if (profile.role === "almacen" && order.created_by !== userId) return;
 
   const restantes = (order.imagenes_urls ?? []).filter((u: string) => u !== url);
   await supabase
