@@ -1,8 +1,33 @@
-import { FileText, ExternalLink, X } from "lucide-react";
+import { FileText, ExternalLink, X, Download } from "lucide-react";
 import { eliminarAdjunto } from "@/app/(app)/ordenes/actions";
 
 function esPdf(url: string) {
   return url.split("?")[0].toLowerCase().endsWith(".pdf");
+}
+
+/**
+ * Descarga directa del archivo tal cual (imagen o PDF), sin pasar por un ZIP:
+ * cuando se mira UNA orden, lo que se necesita es el archivo listo para
+ * adjuntar a un correo. El ZIP sigue en Reportes, para bajar muchas de golpe.
+ */
+function BotonDescargar({ url, esquina = false }: { url: string; esquina?: boolean }) {
+  return (
+    <a
+      href={url}
+      download
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Descargar este archivo"
+      title="Descargar este archivo"
+      className={
+        esquina
+          ? "absolute -left-1.5 -top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-gray-800/80 text-white shadow transition hover:bg-brand"
+          : "shrink-0 rounded-lg p-1 text-gray-400 transition hover:bg-gray-100 hover:text-brand"
+      }
+    >
+      <Download className={esquina ? "h-3.5 w-3.5" : "h-4 w-4"} strokeWidth={2.25} />
+    </a>
+  );
 }
 
 /** Botón "×" para quitar un adjunto — solo se muestra cuando la orden lo permite. */
@@ -67,6 +92,7 @@ function PdfEmbed({
           <span className="flex-1 truncate">{label}</span>
           <ExternalLink className="h-3.5 w-3.5 shrink-0 text-gray-400" strokeWidth={2} />
         </a>
+        <BotonDescargar url={url} />
         {eliminar && (
           <form action={eliminarAdjunto}>
             <input type="hidden" name="order_id" value={eliminar.orderId} />
@@ -125,6 +151,7 @@ export function ImageGallery({
           alt={alt}
           className="w-full rounded-xl border border-gray-200 bg-white object-contain"
         />
+        <BotonDescargar url={urls[0]} esquina />
         {orderId && <BotonEliminar orderId={orderId} url={urls[0]} />}
       </div>
     );
@@ -136,6 +163,7 @@ export function ImageGallery({
         esPdf(url) ? (
           <div key={url} className="relative">
             <PdfCard url={url} label={`${alt} ${i + 1} (PDF)`} />
+            <BotonDescargar url={url} esquina />
             {orderId && <BotonEliminar orderId={orderId} url={url} />}
           </div>
         ) : (
@@ -148,6 +176,7 @@ export function ImageGallery({
                 className="h-32 w-full rounded-xl border border-gray-200 bg-white object-cover"
               />
             </a>
+            <BotonDescargar url={url} esquina />
             {orderId && <BotonEliminar orderId={orderId} url={url} />}
           </div>
         )

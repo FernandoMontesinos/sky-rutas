@@ -13,6 +13,7 @@ import { AlmacenOverrideCompletar } from "./almacen-override";
 import CompletarForm, { RecojoForm } from "./completar";
 import { DividirEnvioForm } from "./dividir-envio";
 import { EditarOrdenForm } from "./editar-form";
+import { AgregarAdjuntosForm } from "./agregar-adjuntos";
 import { HistorialPanel } from "./historial-panel";
 import type { OrderEvent } from "@/lib/historial";
 import { modalidadLabel, type OrderWithNames, type Profile } from "@/lib/types";
@@ -56,9 +57,12 @@ export default async function OrdenDetallePage({
   // los datos: el documento lo carga Ventas y el resto solo lo consulta para
   // despachar. Con la "×" a la vista de todos era cuestión de tiempo que
   // alguien borrara la cotización sin querer.
+  // Almacén se suma solo para las órdenes que él mismo creó (casos especiales
+  // tipo "mandar a bordar"): son suyas de punta a punta, no de Ventas.
   const puedeEditarAdjuntos =
     profile.role === "admin" ||
-    (profile.role === "vendedor" && order.estado === "pendiente");
+    (profile.role === "vendedor" && order.estado === "pendiente") ||
+    (profile.role === "almacen" && order.created_by === userId);
   // Almacén normalmente termina su trabajo en "asignar" cuando hay un
   // repartidor de por medio (modalidad reparto) — es el repartidor quien
   // confirma desde su celular. Pero conserva la opción de completarla él
@@ -254,6 +258,10 @@ export default async function OrdenDetallePage({
         </div>
       )}
 
+      {/* Volver a subir el PDF/imagen: la contraparte de la "×". Se muestra
+          también cuando no queda ninguno, que es justo cuando más hace falta. */}
+      {puedeEditarAdjuntos && <AgregarAdjuntosForm orderId={order.id} />}
+
       {/* Intento(s) fallido(s) de recojo: almacén necesita verlo para
           coordinar con el proveedor antes de volver a asignarla. */}
       {order.no_recogido_intentos > 0 && (
@@ -433,16 +441,26 @@ export default async function OrdenDetallePage({
             {order.numero_guia && (
               <span className="font-semibold text-gray-700">N° {order.numero_guia}</span>
             )}
-            {/* Descarga de esta orden sola: para adjuntar a un correo o
-                archivar un caso puntual sin bajar el ZIP del mes entero. */}
+            {/* Descarga directa del archivo (imagen o PDF), sin empaquetar en
+                ZIP: para una sola orden lo que se quiere es el archivo listo
+                para adjuntar a un correo. El ZIP sigue existiendo en Reportes,
+                que es donde tiene sentido (muchas órdenes de una vez). */}
             {puedeDescargarGuias && (
-              <a
-                href={`/api/export-guias?orden=${order.id}`}
-                className="ml-auto inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-600 transition hover:border-brand hover:text-brand"
-              >
-                <Download className="h-3.5 w-3.5" strokeWidth={2.25} />
-                Descargar (ZIP)
-              </a>
+              <span className="ml-auto inline-flex flex-wrap items-center gap-1">
+                {imagenesGuia.map((url, i) => (
+                  <a
+                    key={url}
+                    href={url}
+                    download
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-600 transition hover:border-brand hover:text-brand"
+                  >
+                    <Download className="h-3.5 w-3.5" strokeWidth={2.25} />
+                    Descargar{imagenesGuia.length > 1 ? ` ${i + 1}` : ""}
+                  </a>
+                ))}
+              </span>
             )}
           </h2>
           <ImageGallery urls={imagenesGuia} alt="Foto de la guía" />
