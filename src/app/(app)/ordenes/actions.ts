@@ -339,18 +339,17 @@ export async function updateModalidad(formData: FormData): Promise<void> {
 }
 
 /**
- * El repartidor confirma que recogió el material del proveedor, subiendo la
- * guía. NO cierra la orden a propósito: él recibe bultos sellados y no cuenta
- * los ítems, así que no puede afirmar que llegó completo. La orden queda "En
- * Tránsito" hasta que alguien CUENTE la mercadería y la cierre con
- * `completeOrder` — almacén cuando llega al depósito, o el propio repartidor
- * cuando va directo al cliente y el cliente cuenta y firma delante suyo.
- */
-/**
- * La guía de remisión la emite SkyHigh y solo aplica a una entrega a
- * cliente — la del proveedor nunca se registra, así que un Pedido no pide
- * guía en ningún paso. La constancia del recojo pasa a ser la foto del
- * material, por eso acá es obligatoria.
+ * El repartidor confirma que recogió (Pedido) o va a entregar (Cotización),
+ * subiendo evidencia. NO cierra la orden ni decide completo/parcial a
+ * propósito: en un Pedido recibe bultos sellados y no cuenta los ítems; en
+ * una Cotización, quien de verdad cuenta y decide es Almacén al cerrar. La
+ * orden queda "En Tránsito" hasta que Almacén (o Admin) la cierre con
+ * `completeOrder`.
+ *
+ * La guía de remisión la emite SkyHigh y solo aplica a una Cotización — la
+ * del proveedor nunca se registra, así que un Pedido no pide guía acá. En una
+ * Cotización sí se pide la foto de la guía (obligatoria); el número escrito
+ * es opcional — si falta, Almacén lo completa al cerrar.
  */
 export async function marcarEnTransito(
   _prev: FormResult,
@@ -360,33 +359,44 @@ export async function marcarEnTransito(
 
   const orderId = String(formData.get("order_id") ?? "");
   const observaciones = String(formData.get("observaciones") ?? "").trim();
-  const parcial = String(formData.get("entrega_parcial") ?? "") === "true";
-  const notaFaltante = String(formData.get("nota_faltante") ?? "").trim();
+  const numeroGuiaInput = String(formData.get("numero_guia") ?? "").trim();
+  const guias = formData.getAll("guias").filter((f): f is File => f instanceof File && f.size > 0);
   const material = formData.getAll("material").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!orderId) return { error: "Orden inválida." };
-  if (material.length === 0)
-    return { error: "Toma al menos una foto del material antes de confirmar." };
-  if (parcial && !notaFaltante)
-    return { error: "Cuéntanos qué falta completar." };
 
   const supabase = await createClient();
 
   // La misma carrera que ya se blindó en completeOrder/dividirEnvio: sin
   // este chequeo, un reintento de red tardío (o una pestaña vieja) podía
   // reescribir a "en_transito" una orden que almacén ya había cerrado.
-  // El select trae los mismos campos que completeOrder porque crearOrdenHija
-  // los necesita para copiar el pedido nuevo (ver más abajo).
   const { data: actual } = await supabase
     .from("orders")
-    .select(
-      "id, estado, numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, tipo, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by"
-    )
+    .select("id, estado, tipo, guias_urls, guia_url, numero_guia")
     .eq("id", orderId)
     .single();
   if (!actual) return { error: "Orden inválida." };
   if (actual.estado !== "asignado")
     return { error: "Esta orden ya no está asignada; recarga la página para ver su estado actual." };
+
+  const esEntrega = actual.tipo === "entrega";
+
+  const guiasPrevias: string[] = actual.guias_urls?.length
+    ? actual.guias_urls
+    : actual.guia_url
+      ? [actual.guia_url]
+      : [];
+  if (esEntrega && guias.length === 0 && guiasPrevias.length === 0)
+    return { error: "Toma al menos una foto de la guía antes de confirmar." };
+  if (material.length === 0)
+    return { error: "Toma al menos una foto del material antes de confirmar." };
+
+  let guiaUrls = guiasPrevias;
+  if (esEntrega && guias.length > 0) {
+    const { urls: nuevas, error: upErr } = await uploadMany(supabase, "guias", orderId, guias);
+    if (upErr) return { error: "No se pudo subir la foto de la guía: " + upErr };
+    guiaUrls = [...guiasPrevias, ...nuevas];
+  }
 
   const { urls: materialUrls, error: matErr } = await uploadMany(
     supabase,
@@ -396,29 +406,14 @@ export async function marcarEnTransito(
   );
   if (matErr) return { error: "No se pudo subir la foto del material: " + matErr };
 
-  // Backorder: si el proveedor no tenía todo listo, se crea de inmediato el
-  // pedido con lo que falta — mismo patrón que completeOrder (ver ahí), solo
-  // que un paso antes: acá el repartidor sabe a nivel de bultos que se lleva
-  // menos de lo pedido, sin necesidad de contar ítems. Se crea ANTES de
-  // marcar en tránsito, por la misma razón: si el remanente falla, se aborta
-  // sin haber movido la orden.
-  let backorderId: string | null = null;
-  if (parcial) {
-    const hija = await crearOrdenHija(supabase, actual, "remanente", notaFaltante);
-    if ("error" in hija) {
-      console.error("No se pudo crear el remanente:", hija.error, { orderId });
-      return { error: `No se pudo crear el pedido con lo que falta: ${hija.error}` };
-    }
-    backorderId = hija.id;
-  }
-
   const { data: updated, error } = await supabase
     .from("orders")
     .update({
       material_urls: materialUrls,
+      ...(esEntrega ? { guia_url: guiaUrls[0] ?? null, guias_urls: guiaUrls } : {}),
+      ...(esEntrega && numeroGuiaInput ? { numero_guia: numeroGuiaInput } : {}),
       estado: "en_transito",
       en_transito_at: new Date().toISOString(),
-      entrega_parcial: parcial,
       ...(observaciones ? { observaciones } : {}),
     })
     .eq("id", orderId)
@@ -426,44 +421,31 @@ export async function marcarEnTransito(
     .single();
   if (error) return { error: error.message };
 
-  await registrarEvento(
-    supabase,
-    orderId,
-    parcial ? "recogida_parcial" : "recogida",
-    parcial ? notaFaltante : null
-  );
+  await registrarEvento(supabase, orderId, "recogida");
   if (observaciones) await registrarEvento(supabase, orderId, "observacion", observaciones);
 
   const almacenIds = await userIdsByRole("almacen");
   await notify(almacenIds, {
     tipo: "orden_en_transito",
-    titulo: parcial ? "Material recogido parcial — falta verificar" : "Material recogido — falta verificar",
+    titulo: "Material recogido — falta verificar",
     mensaje: `#${updated.numero_pedido}${
       updated.cliente ? " · " + updated.cliente : ""
     } — cuenten los ítems para cerrarla.`,
     orderId,
   });
 
-  if (backorderId) {
-    await notify(almacenIds, {
-      tipo: "orden_pendiente",
-      titulo: "Pedido pendiente por recojo parcial",
-      mensaje: `#${updated.numero_pedido} quedó parcial en el recojo — falta coordinar el resto con el proveedor.`,
-      orderId: backorderId,
-    });
-  }
-
   revalidatePath(`/ordenes/${orderId}`);
-  if (backorderId) revalidatePath(`/ordenes/${backorderId}`);
   revalidatePath("/ordenes");
   redirect("/ordenes");
 }
 
 /**
- * El repartidor fue al proveedor y el material no estaba listo. La orden
- * vuelve a "pendiente" y queda libre para reasignar — no es un estado del
- * flujo, es un intento que falló. Se guarda el motivo y se suma un intento
- * para que se vea qué proveedor está fallando repetido.
+ * El repartidor fue al proveedor (Pedido) o donde el cliente (Cotización) y
+ * no pudo completar su parte. La orden vuelve a "pendiente" y queda libre
+ * para reasignar — no es un estado del flujo, es un intento que falló. Se
+ * guarda el motivo y se suma un intento para que se vea qué proveedor o
+ * cliente está fallando repetido. Misma lógica para los dos tipos, solo
+ * cambia el vocabulario (ver NoRecogidoForm).
  */
 export async function marcarNoRecogido(
   _prev: FormResult,
@@ -475,18 +457,19 @@ export async function marcarNoRecogido(
   const motivo = String(formData.get("motivo") ?? "").trim();
 
   if (!orderId) return { error: "Orden inválida." };
-  if (!motivo) return { error: "Cuéntanos por qué no se pudo recoger." };
+  if (!motivo) return { error: "Cuéntanos qué pasó." };
 
   const supabase = await createClient();
 
   const { data: actual } = await supabase
     .from("orders")
-    .select("numero_pedido, cliente, no_recogido_intentos")
+    .select("numero_pedido, cliente, tipo, no_recogido_intentos")
     .eq("id", orderId)
     .single();
   if (!actual) return { error: "Orden inválida." };
 
   const intentos = (actual.no_recogido_intentos ?? 0) + 1;
+  const esEntrega = actual.tipo === "entrega";
 
   const { error } = await supabase
     .from("orders")
@@ -501,12 +484,12 @@ export async function marcarNoRecogido(
     .eq("id", orderId);
   if (error) return { error: error.message };
 
-  await registrarEvento(supabase, orderId, "no_recogida", motivo);
+  await registrarEvento(supabase, orderId, esEntrega ? "no_entregado" : "no_recogida", motivo);
 
   const almacenIds = await userIdsByRole("almacen");
   await notify(almacenIds, {
     tipo: "orden_pendiente",
-    titulo: `No se pudo recoger${intentos > 1 ? ` (intento ${intentos})` : ""}`,
+    titulo: `No se pudo ${esEntrega ? "entregar" : "recoger"}${intentos > 1 ? ` (intento ${intentos})` : ""}`,
     mensaje: `#${actual.numero_pedido}${
       actual.cliente ? " · " + actual.cliente : ""
     } — ${motivo}`,
@@ -680,15 +663,16 @@ export async function dividirEnvio(
 }
 
 /** Sube una o más fotos de la guía/comprobante y marca la orden como
- *  completada (total o parcial). Repartidor: solo sus órdenes propias.
- *  Almacén/Admin: cualquiera (oficina/courier). Si la orden ya venía "En
- *  Tránsito", la guía se subió al recoger, así que acá la foto es opcional
- *  (quien verifica puede sumar otra si quiere, no reemplaza la anterior). */
+ *  completada (total o parcial). Exclusivo de Almacén/Admin — el repartidor
+ *  nunca cierra una orden, su trabajo termina en "En Tránsito" (ver
+ *  marcarEnTransito). Si la orden ya venía "En Tránsito", la guía/material se
+ *  subió al confirmar, así que acá esas fotos son opcionales (quien cuenta
+ *  puede sumar otra si quiere, no reemplaza la anterior). */
 export async function completeOrder(
   _prev: FormResult,
   formData: FormData
 ): Promise<FormResult> {
-  await requireRole(["repartidor", "almacen", "admin"]);
+  await requireRole(["almacen", "admin"]);
 
   const orderId = String(formData.get("order_id") ?? "");
   const parcial = String(formData.get("entrega_parcial") ?? "") === "true";
@@ -699,12 +683,13 @@ export async function completeOrder(
   const material = formData.getAll("material").filter((f): f is File => f instanceof File && f.size > 0);
 
   if (!orderId) return { error: "Orden inválida." };
+  if (parcial && !notaFaltante) return { error: "Cuéntanos qué falta completar." };
 
   const supabase = await createClient();
 
   const { data: actual } = await supabase
     .from("orders")
-    .select("id, estado, tipo, guias_urls, guia_url, numero_guia, material_urls, numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by, entrega_parcial")
+    .select("id, estado, tipo, guias_urls, guia_url, numero_guia, material_urls, numero_pedido, cliente, proyecto, proveedor, numero_pedido_compra, modalidad, courier_tracking, imagen_url, imagenes_urls, created_by")
     .eq("id", orderId)
     .single();
   if (!actual) return { error: "Orden inválida." };
@@ -716,36 +701,23 @@ export async function completeOrder(
   // pide en ningún paso. Ahí la constancia es la foto del material.
   const esRecojo = actual.tipo === "recojo";
 
-  // Un Pedido que pasó por el recojo del repartidor ya decidió ahí si quedó
-  // completo o parcial (ver marcarEnTransito) — acá solo queda cerrar, sin
-  // volver a preguntar ni crear el remanente por segunda vez. Se calcula del
-  // lado del servidor, no de un campo que mande el formulario: así no
-  // depende de que el cliente mande el flag correcto.
-  const decidioAlRecoger = esRecojo && actual.estado === "en_transito";
-
-  if (!decidioAlRecoger && parcial && !notaFaltante)
-    return { error: "Cuéntanos qué falta completar." };
-
   const guiasPrevias: string[] = actual.guias_urls?.length
     ? actual.guias_urls
     : actual.guia_url
       ? [actual.guia_url]
       : [];
 
+  // El número de guía ya NO es obligatorio para cerrar: el repartidor puede
+  // confirmar sin escribirlo, y acá Almacén lo completa o corrige si lo
+  // tiene — pero si sigue vacío, no bloquea el cierre.
   let numeroGuia: string | null = null;
   if (!esRecojo) {
     if (guias.length === 0 && guiasPrevias.length === 0)
       return { error: "Toma al menos una foto de la guía antes de confirmar." };
-    // El número de guía se pide una sola vez: si ya se escribió en el paso
-    // de recojo, acá es opcional (solo se usa para corregirlo). Si esta
-    // orden nunca pasó por ese paso (entrega directa), sí es obligatorio.
     numeroGuia = numeroGuiaInput || actual.numero_guia;
-    if (!numeroGuia) return { error: "Ingresa el número de guía (escrito a mano)." };
   }
 
   const materialPrevio = actual.material_urls ?? [];
-  if (esRecojo && material.length === 0 && materialPrevio.length === 0)
-    return { error: "Toma al menos una foto del material antes de cerrar." };
 
   let urls = guiasPrevias;
   if (!esRecojo && guias.length > 0) {
@@ -774,8 +746,16 @@ export async function completeOrder(
   // Se crea ANTES de cerrar el padre a propósito: si el remanente falla (número
   // ocupado, permisos), se aborta sin haber cerrado nada. Al revés, la orden
   // quedaba cerrada como parcial y el remanente se perdía en silencio.
+  // Backorder: si quedó parcial, se crea un pedido nuevo solo por lo que falta
+  // (mismo patrón que usa Odoo) — el original queda como registro histórico de
+  // lo que sí se entregó, y el remanente arranca de "pendiente" para que
+  // almacén lo asigne.
+  //
+  // Se crea ANTES de cerrar el padre a propósito: si el remanente falla (número
+  // ocupado, permisos), se aborta sin haber cerrado nada. Al revés, la orden
+  // quedaba cerrada como parcial y el remanente se perdía en silencio.
   let backorderId: string | null = null;
-  if (!decidioAlRecoger && parcial) {
+  if (parcial) {
     const hija = await crearOrdenHija(supabase, actual, "remanente", notaFaltante);
     if ("error" in hija) {
       console.error("No se pudo crear el remanente:", hija.error, { orderId });
@@ -791,10 +771,7 @@ export async function completeOrder(
       guias_urls: urls,
       numero_guia: numeroGuia,
       material_urls: materialUrls,
-      // Si ya se decidió en el recojo, no se toca — pisarlo acá con el valor
-      // por defecto del formulario (false, porque ya no se manda el campo)
-      // borraría el "parcial" que se puso al recoger.
-      ...(decidioAlRecoger ? {} : { entrega_parcial: parcial }),
+      entrega_parcial: parcial,
       estado: "completado",
       completed_at: new Date().toISOString(),
       ...(observaciones ? { observaciones } : {}),
@@ -803,24 +780,21 @@ export async function completeOrder(
   if (error) return { error: error.message };
 
   const updated = actual;
-  // Para el aviso a quien creó la orden: si ya venía parcial del recojo, sigue
-  // parcial aunque acá no se haya vuelto a preguntar.
-  const quedoParcial = decidioAlRecoger ? actual.entrega_parcial : parcial;
 
   await registrarEvento(
     supabase,
     orderId,
-    !decidioAlRecoger && parcial ? "parcial" : "completada",
-    !decidioAlRecoger && parcial ? notaFaltante : null
+    parcial ? "parcial" : "completada",
+    parcial ? notaFaltante : null
   );
   if (observaciones) await registrarEvento(supabase, orderId, "observacion", observaciones);
 
   if (updated.created_by) {
     await notify([updated.created_by], {
-      tipo: quedoParcial ? "orden_parcial" : "orden_completada",
-      titulo: quedoParcial ? "Orden completada parcialmente" : "Orden completada",
+      tipo: parcial ? "orden_parcial" : "orden_completada",
+      titulo: parcial ? "Orden completada parcialmente" : "Orden completada",
       mensaje: `#${updated.numero_pedido}${updated.cliente ? " · " + updated.cliente : ""}${
-        quedoParcial ? " — falta terminar el resto." : ""
+        parcial ? " — falta terminar el resto." : ""
       }`,
       orderId,
     });
