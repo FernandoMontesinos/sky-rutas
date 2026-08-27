@@ -3,15 +3,13 @@ import { notFound } from "next/navigation";
 import { Download, GitBranch } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { fechaHoraCorta } from "@/lib/fecha";
-import { nombreArchivo, urlDescarga } from "@/lib/descarga";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
 import { ImageGallery } from "@/components/image-gallery";
 import { EliminarOrdenButton } from "./eliminar-orden";
 import { ModalidadForm } from "./modalidad-form";
 import { AsignarForm } from "./asignar-form";
-import { AlmacenOverrideCompletar } from "./almacen-override";
-import CompletarForm, { RecojoForm } from "./completar";
+import CompletarForm, { ConfirmarTransitoForm } from "./completar";
 import { DividirEnvioForm } from "./dividir-envio";
 import { EditarOrdenForm } from "./editar-form";
 import { AgregarAdjuntosForm } from "./agregar-adjuntos";
@@ -64,25 +62,18 @@ export default async function OrdenDetallePage({
     profile.role === "admin" ||
     (profile.role === "vendedor" && order.estado === "pendiente") ||
     (profile.role === "almacen" && order.created_by === userId);
-  // Almacén normalmente termina su trabajo en "asignar" cuando hay un
-  // repartidor de por medio (modalidad reparto) — es el repartidor quien
-  // confirma desde su celular. Pero conserva la opción de completarla él
-  // mismo si hace falta (ver AlmacenOverrideCompletar), solo que no se le
-  // muestra de entrada para evitar que la marque sin querer.
-  const almacenReparto = isAlmacen && order.modalidad === "reparto";
-  const canComplete =
-    order.estado !== "completado" &&
-    (profile.role === "admin" || isAlmacen || (isRepartidor && isMine));
+  // Cerrar la orden (y decidir completo/parcial) es exclusivo de Almacén y
+  // Admin — el repartidor nunca cierra, su trabajo termina en "En Tránsito".
+  const canComplete = order.estado !== "completado" && (profile.role === "admin" || isAlmacen);
 
-  // Un Pedido (Proveedor) que todavía tiene que ir a recoger el repartidor:
-  // él solo sube la guía y confirma el recojo, sin decir si llegó completo
-  // (recibe bultos sellados, no cuenta ítems). Almacén/admin sí pueden
-  // cerrarla directo desde "asignado" — es el caso de los pedidos que no
-  // pasan por un repartidor (Recepción en oficina / Courier).
-  const esRecojoPorConfirmar =
-    order.tipo === "recojo" && order.estado === "asignado" && isRepartidor && isMine;
-  // Ya se recogió y falta contar la mercadería: la cierra quien la cuente
-  // (almacén al recibirla, o el repartidor si fue directo al cliente).
+  // Una orden de modalidad Reparto (Pedido o Cotización) que todavía tiene
+  // que confirmar el repartidor: sube evidencia y pasa a "En Tránsito", sin
+  // decir si llegó completo (eso lo decide Almacén al cerrar). Oficina/
+  // courier no pasan por acá — Almacén/admin las cierra directo desde
+  // "asignado", porque nunca hay nadie recogiendo o entregando en la calle.
+  const puedeConfirmarTransito =
+    order.modalidad === "reparto" && order.estado === "asignado" && isRepartidor && isMine;
+  // Ya se confirmó y falta que Almacén cuente y cierre.
   const estaEnTransito = order.estado === "en_transito";
   // Almacén puede partir la orden en varios envíos mientras no esté cerrada.
   const puedeDividir = canAssign && order.estado !== "completado";
@@ -307,7 +298,7 @@ export default async function OrdenDetallePage({
         </div>
         {order.en_transito_at && (
           <div className="min-w-0">
-            <dt className="text-gray-400">Recogida</dt>
+            <dt className="text-gray-400">{order.tipo === "recojo" ? "Recogida" : "Confirmada"}</dt>
             <dd className="break-words font-medium text-gray-800">{fmt(order.en_transito_at)}</dd>
           </div>
         )}
@@ -394,36 +385,30 @@ export default async function OrdenDetallePage({
       {/* Almacén: despachar la orden en varias guías de remisión. */}
       {puedeDividir && <DividirEnvioForm orderId={order.id} />}
 
-      {/* Paso 1 de un Pedido: el repartidor confirma el recojo (sin contar). */}
-      {esRecojoPorConfirmar && <RecojoForm orderId={order.id} />}
+      {/* Repartidor: confirma (sube evidencia, sin decir si llegó completo). */}
+      {puedeConfirmarTransito && <ConfirmarTransitoForm orderId={order.id} tipo={order.tipo} />}
 
-      {/* Completar / verificar: lo hace quien contó la mercadería.
-          - repartidor: solo si la orden es suya (asignada)
-          - almacén en reparto: oculto detrás de un paso extra (ver arriba),
-            salvo que ya esté En Tránsito — ahí verificar SÍ es su trabajo
-          - almacén en oficina/courier y admin: directo */}
-      {!esRecojoPorConfirmar && canComplete && (isRepartidor ? order.assigned_to : true) && (
-        almacenReparto && !estaEnTransito ? (
-          <AlmacenOverrideCompletar repartidorNombre={order.repartidor?.full_name ?? "el repartidor asignado"}>
-            <CompletarForm
-              orderId={order.id}
-              tipo={order.tipo}
-              numeroGuiaActual={order.numero_guia}
-              guiasActuales={imagenesGuia}
-              materialActual={imagenesMaterial}
-            />
-          </AlmacenOverrideCompletar>
-        ) : (
-          <CompletarForm
-            orderId={order.id}
-            tipo={order.tipo}
-            verificando={estaEnTransito}
-            numeroGuiaActual={order.numero_guia}
-            guiasActuales={imagenesGuia}
-            materialActual={imagenesMaterial}
-            entregaParcialPrevia={order.entrega_parcial}
-          />
-        )
+      {/* Cerrar / contar: exclusivo de Almacén y Admin, y siempre directo —
+          en cualquier estado, incluso sin repartidor asignado. Antes, cuando
+          la modalidad era Reparto, a Almacén se le escondía detrás de un paso
+          extra de confirmación para que no la cerrara sin querer; en la
+          práctica estorbaba, porque hay entregas que Almacén cierra sin que
+          pase por la ruta. */}
+      {!puedeConfirmarTransito && canComplete && (
+        <CompletarForm
+          orderId={order.id}
+          tipo={order.tipo}
+          verificando={estaEnTransito}
+          numeroGuiaActual={order.numero_guia}
+          guiasActuales={imagenesGuia}
+          materialActual={imagenesMaterial}
+        />
+      )}
+
+      {isRepartidor && isMine && estaEnTransito && (
+        <p className="rounded-xl bg-sky-50 p-3 text-sm text-sky-800">
+          Ya confirmaste — Almacén se encarga de contar y cerrar la orden.
+        </p>
       )}
 
       {isRepartidor && order.estado !== "completado" && !isMine && (
@@ -443,35 +428,18 @@ export default async function OrdenDetallePage({
             {order.numero_guia && (
               <span className="font-semibold text-gray-700">N° {order.numero_guia}</span>
             )}
-            {/* Descarga directa del archivo (imagen o PDF), sin empaquetar en
-                ZIP: para una sola orden lo que se quiere es el archivo listo
-                para adjuntar a un correo. El ZIP sigue existiendo en Reportes,
-                que es donde tiene sentido (muchas órdenes de una vez). */}
+            {/* La guía se descarga como PDF (una página por foto): se toma con
+                la cámara, pero quien la archiva o la manda por correo la
+                necesita en PDF. Las fotos sueltas siguen disponibles una a una
+                desde la galería de abajo. */}
             {puedeDescargarGuias && (
-              <span className="ml-auto inline-flex flex-wrap items-center gap-1">
-                {imagenesGuia.map((url, i) => {
-                  const nombre = nombreArchivo(
-                    `guia-${order.numero_guia || order.numero_pedido}`,
-                    url,
-                    i,
-                    imagenesGuia.length
-                  );
-                  return (
-                    <a
-                      key={url}
-                      // ?download hace que Storage responda como adjunto: sin
-                      // eso el navegador solo abría la imagen en otra pestaña
-                      // (el atributo `download` se ignora entre dominios).
-                      href={urlDescarga(url, nombre)}
-                      download={nombre}
-                      className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-600 transition hover:border-brand hover:text-brand"
-                    >
-                      <Download className="h-3.5 w-3.5" strokeWidth={2.25} />
-                      Descargar{imagenesGuia.length > 1 ? ` ${i + 1}` : ""}
-                    </a>
-                  );
-                })}
-              </span>
+              <a
+                href={`/api/guia-pdf?orden=${order.id}`}
+                className="ml-auto inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-600 transition hover:border-brand hover:text-brand"
+              >
+                <Download className="h-3.5 w-3.5" strokeWidth={2.25} />
+                Descargar PDF
+              </a>
             )}
           </h2>
           <ImageGallery
