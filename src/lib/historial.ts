@@ -20,6 +20,7 @@ export type EventoTipo =
   | "parcial"
   | "adjunto_eliminado"
   | "adjunto_agregado"
+  | "anulada"
   | "observacion";
 
 export const EVENTO_LABEL: Record<EventoTipo, string> = {
@@ -39,6 +40,7 @@ export const EVENTO_LABEL: Record<EventoTipo, string> = {
   parcial: "Cerró la orden como parcial",
   adjunto_eliminado: "Quitó un archivo",
   adjunto_agregado: "Agregó un archivo",
+  anulada: "Anuló la orden",
   observacion: "Dejó una observación",
 };
 

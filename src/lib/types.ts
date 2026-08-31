@@ -1,6 +1,12 @@
 export type UserRole = "admin" | "vendedor" | "almacen" | "repartidor" | "facturacion";
 export type OrderType = "entrega" | "recojo";
-export type OrderStatus = "pendiente" | "asignado" | "en_transito" | "completado";
+export type OrderStatus =
+  | "pendiente"
+  | "asignado"
+  | "en_transito"
+  | "completado"
+  /** El cliente canceló la OC. La orden queda como registro, fuera del flujo. */
+  | "anulado";
 export type Modalidad = "reparto" | "oficina" | "courier";
 /** Motivo por el que se creó una orden hija (ver `Order.division_tipo`). */
 export type DivisionTipo = "remanente" | "envio";
@@ -55,6 +61,10 @@ export type Order = {
   assigned_at: string | null;
   en_transito_at: string | null;
   completed_at: string | null;
+  /** Por qué se anuló (normalmente: el cliente canceló la OC). */
+  anulada_motivo: string | null;
+  anulada_at: string | null;
+  anulada_por: string | null;
 };
 
 // Orden con los nombres de las personas relacionadas (vía join).
@@ -76,6 +86,7 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
   asignado: "Asignado",
   en_transito: "En Tránsito",
   completado: "Completado",
+  anulado: "Anulada",
 };
 
 export const TYPE_LABEL: Record<OrderType, string> = {

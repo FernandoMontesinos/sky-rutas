@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
 import { ImageGallery } from "@/components/image-gallery";
 import { EliminarOrdenButton } from "./eliminar-orden";
+import { AnularOrdenForm } from "./anular-orden";
 import { ModalidadForm } from "./modalidad-form";
 import { AsignarForm } from "./asignar-form";
 import CompletarForm, { ConfirmarTransitoForm } from "./completar";
@@ -64,9 +65,13 @@ export default async function OrdenDetallePage({
     profile.role === "admin" ||
     (profile.role === "vendedor" && order.estado === "pendiente") ||
     (profile.role === "almacen" && order.created_by === userId);
+  // Anulada: el cliente canceló la OC. La orden queda como registro, así que
+  // no admite ninguna acción del flujo — solo se consulta.
+  const estaAnulada = order.estado === "anulado";
   // Cerrar la orden (y decidir completo/parcial) es exclusivo de Almacén y
   // Admin — el repartidor nunca cierra, su trabajo termina en "En Tránsito".
-  const canComplete = order.estado !== "completado" && (profile.role === "admin" || isAlmacen);
+  const canComplete =
+    order.estado !== "completado" && !estaAnulada && (profile.role === "admin" || isAlmacen);
 
   // Una orden de modalidad Reparto (Pedido o Cotización) que todavía tiene
   // que confirmar el repartidor: sube evidencia y pasa a "En Tránsito", sin
@@ -78,7 +83,14 @@ export default async function OrdenDetallePage({
   // Ya se confirmó y falta que Almacén cuente y cierre.
   const estaEnTransito = order.estado === "en_transito";
   // Almacén puede partir la orden en varios envíos mientras no esté cerrada.
-  const puedeDividir = canAssign && order.estado !== "completado";
+  const puedeDividir = canAssign && order.estado !== "completado" && !estaAnulada;
+  // Anular es la salida para "el cliente canceló la OC": conserva la orden y
+  // su historial, a diferencia de eliminar (solo Admin, para el error de
+  // carga). No aplica sobre una orden ya cerrada ni sobre una ya anulada.
+  const puedeAnular =
+    !estaAnulada &&
+    order.estado !== "completado" &&
+    (profile.role === "admin" || profile.role === "vendedor" || isAlmacen);
 
   // Backorder: si esta orden viene de una parcial, o si generó una al
   // quedar parcial, se muestra el enlace cruzado para no perder el hilo.
@@ -274,6 +286,20 @@ export default async function OrdenDetallePage({
 
       {/* Intento(s) fallido(s) de recojo: almacén necesita verlo para
           coordinar con el proveedor antes de volver a asignarla. */}
+      {/* Anulada: lo primero que se tiene que leer al abrir la orden, para que
+          nadie siga trabajando sobre algo que el cliente ya canceló. */}
+      {estaAnulada && (
+        <div className="rounded-xl border border-gray-300 bg-gray-100 p-3 text-sm">
+          <p className="font-semibold text-gray-800">Orden anulada</p>
+          {order.anulada_motivo && (
+            <p className="mt-0.5 text-gray-700">{order.anulada_motivo}</p>
+          )}
+          {order.anulada_at && (
+            <p className="mt-0.5 text-xs text-gray-500">Anulada el {fmt(order.anulada_at)}</p>
+          )}
+        </div>
+      )}
+
       {order.no_recogido_intentos > 0 && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm">
           <p className="font-semibold text-red-800">
@@ -366,7 +392,7 @@ export default async function OrdenDetallePage({
       </dl>
 
       {/* Modalidad (almacén/admin) */}
-      {canAssign && order.estado !== "completado" && (
+      {canAssign && order.estado !== "completado" && !estaAnulada && (
         <ModalidadForm
           orderId={order.id}
           modalidad={order.modalidad}
@@ -376,7 +402,7 @@ export default async function OrdenDetallePage({
       )}
 
       {/* Asignar (almacén/admin) */}
-      {canAssign && order.estado !== "completado" && (
+      {canAssign && order.estado !== "completado" && !estaAnulada && (
         <AsignarForm
           orderId={order.id}
           assignedTo={order.assigned_to}
@@ -480,6 +506,9 @@ export default async function OrdenDetallePage({
           />
         </div>
       )}
+
+      {/* Anular: el cliente canceló la OC. Conserva la orden y su historial. */}
+      {puedeAnular && <AnularOrdenForm orderId={order.id} />}
 
       {/* Eliminar (solo Admin) */}
       {puedeEliminar && <EliminarOrdenButton orderId={order.id} />}

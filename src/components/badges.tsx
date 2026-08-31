@@ -21,6 +21,9 @@ export function StatusBadge({
     asignado: "bg-amber-100 text-amber-800",
     en_transito: "bg-sky-100 text-sky-800",
     completado: "bg-green-100 text-green-800",
+    // Neutro y tachado: una orden anulada no es un error ni un pendiente,
+    // es un registro histórico que quedó fuera de circulación.
+    anulado: "bg-gray-300 text-gray-600 line-through",
   };
   if (estado === "completado" && parcial) {
     return (

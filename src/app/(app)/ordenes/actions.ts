@@ -386,9 +386,13 @@ export async function marcarEnTransito(
     : actual.guia_url
       ? [actual.guia_url]
       : [];
+  // Una sola evidencia obligatoria por tipo, no dos: en una Cotización manda
+  // la guía de remisión (el material queda opcional, para cuando aporte algo);
+  // en un Pedido no hay guía que emitir, así que la foto del material es la
+  // única constancia del recojo y ahí sí se exige.
   if (esEntrega && guias.length === 0 && guiasPrevias.length === 0)
     return { error: "Toma al menos una foto de la guía antes de confirmar." };
-  if (material.length === 0)
+  if (!esEntrega && material.length === 0)
     return { error: "Toma al menos una foto del material antes de confirmar." };
 
   let guiaUrls = guiasPrevias;
@@ -823,6 +827,78 @@ export async function completeOrder(
  * tiene hijas (remanente o envío dividido): borrarla dejaría esos enlaces
  * cruzados apuntando a un id inexistente y el hilo de la familia se pierde.
  */
+/**
+ * Anula una orden porque el cliente canceló la OC. NO la borra: la orden se
+ * queda como registro con su historial intacto, solo sale de circulación
+ * (pasa al estado "anulado", que ninguna consulta del tablero incluye).
+ *
+ * Es la alternativa a `deleteOrder` para el caso normal de negocio — eliminar
+ * queda para el error de carga, y sigue siendo exclusivo de Admin.
+ *
+ * La puede anular Ventas (es quien habla con el cliente y se entera de la
+ * cancelación), Almacén y Admin. No se permite sobre una orden ya cerrada:
+ * si el material salió y se entregó, cancelarla ya no describe la realidad —
+ * eso se corrige por otra vía.
+ */
+export async function anularOrden(_prev: FormResult, formData: FormData): Promise<FormResult> {
+  const { userId } = await requireRole(["admin", "vendedor", "almacen"]);
+
+  const orderId = String(formData.get("order_id") ?? "");
+  const motivo = String(formData.get("motivo") ?? "").trim();
+
+  if (!orderId) return { error: "Orden inválida." };
+  if (!motivo) return { error: "Cuéntanos por qué se anula la orden." };
+
+  const supabase = await createClient();
+
+  const { data: actual } = await supabase
+    .from("orders")
+    .select("estado, numero_pedido, cliente, created_by")
+    .eq("id", orderId)
+    .single();
+  if (!actual) return { error: "Orden inválida." };
+
+  if (actual.estado === "anulado") {
+    return { error: "Esta orden ya está anulada." };
+  }
+  if (actual.estado === "completado") {
+    return { error: "Esta orden ya se completó; no se puede anular." };
+  }
+
+  // `.select()` para no dar por buena una anulación que RLS descartó en
+  // silencio (PostgREST devuelve cero filas sin error).
+  const { data: anulada, error } = await supabase
+    .from("orders")
+    .update({
+      estado: "anulado",
+      anulada_motivo: motivo,
+      anulada_at: new Date().toISOString(),
+      anulada_por: userId,
+    })
+    .eq("id", orderId)
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!anulada) return { error: "No tienes permiso para anular esta orden." };
+
+  await registrarEvento(supabase, orderId, "anulada", motivo);
+
+  // Se avisa a quien la creó (si no fue él mismo quien anuló) para que no
+  // siga esperando una orden que ya no va a moverse.
+  if (actual.created_by && actual.created_by !== userId) {
+    await notify([actual.created_by], {
+      tipo: "orden_completada",
+      titulo: "Orden anulada",
+      mensaje: `#${actual.numero_pedido}${actual.cliente ? " · " + actual.cliente : ""} — ${motivo}`,
+      orderId,
+    });
+  }
+
+  revalidatePath(`/ordenes/${orderId}`);
+  revalidatePath("/ordenes");
+  return {};
+}
+
 export async function deleteOrder(_prev: FormResult, formData: FormData): Promise<FormResult> {
   await requireRole(["admin"]);
   const orderId = String(formData.get("order_id") ?? "");

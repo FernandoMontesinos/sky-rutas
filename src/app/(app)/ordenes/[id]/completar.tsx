@@ -226,7 +226,9 @@ export function ConfirmarTransitoForm({ orderId, tipo }: { orderId: string; tipo
       setLocalError("Toma al menos una foto de la guía.");
       return;
     }
-    if (materialImages.length === 0) {
+    // Solo en un Pedido: ahí no hay guía, así que la foto del material es la
+    // única constancia. En una Cotización basta con la guía (ver marcarEnTransito).
+    if (!esEntrega && materialImages.length === 0) {
       setLocalError("Toma al menos una foto del material.");
       return;
     }
@@ -279,7 +281,9 @@ export function ConfirmarTransitoForm({ orderId, tipo }: { orderId: string; tipo
       )}
 
       <div>
-        <span className="mb-1 block text-xs font-medium text-gray-700">Foto(s) del material</span>
+        <span className="mb-1 block text-xs font-medium text-gray-700">
+          Foto(s) del material{esEntrega ? " (opcional)" : ""}
+        </span>
         <MultiImagePicker
           label=""
           images={materialImages}

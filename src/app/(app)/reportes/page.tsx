@@ -101,6 +101,8 @@ export default async function ReportesPage({
               <option value="asignado">Asignado</option>
               <option value="en_transito">En Tránsito</option>
               <option value="completado">Completado</option>
+              {/* Las anuladas no aparecen en el tablero; acá queda su registro. */}
+              <option value="anulado">Anulada</option>
             </select>
           </div>
           <div>

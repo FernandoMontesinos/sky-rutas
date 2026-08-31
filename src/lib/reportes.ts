@@ -67,7 +67,14 @@ export const SELECT_REPORTE =
 /** Tope de filas por consulta: el rango de fechas ya acota, esto es solo red de seguridad. */
 export const LIMITE_FILAS = 5000;
 
-const ESTADOS: OrderStatus[] = ["pendiente", "asignado", "en_transito", "completado"];
+const ESTADOS: OrderStatus[] = [
+  "pendiente",
+  "asignado",
+  "en_transito",
+  "completado",
+  // Las anuladas no salen en el tablero: Reportes es donde queda su registro.
+  "anulado",
+];
 const TIPOS: OrderType[] = ["entrega", "recojo"];
 
 /** Fecha en formato YYYY-MM-DD según el reloj de Lima. */

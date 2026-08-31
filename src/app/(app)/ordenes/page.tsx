@@ -128,6 +128,7 @@ function horaSegunEstado(o: OrderWithNames): string | null {
     asignado: o.assigned_at,
     en_transito: o.en_transito_at,
     completado: o.completed_at,
+    anulado: o.anulada_at,
   };
   return horaCorta(campos[o.estado] ?? o.created_at);
 }
