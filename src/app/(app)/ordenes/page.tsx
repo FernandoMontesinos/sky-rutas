@@ -17,6 +17,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
 import { TZ_LIMA } from "@/lib/fecha";
 import { limpiarBusqueda, ymdLima } from "@/lib/reportes";
+import { columnasDeRepartidor, ordenarColumna } from "@/lib/tablero";
 import {
   MODALIDAD_SHORT,
   modalidadLabel,
@@ -43,19 +44,6 @@ function inicial(nombre: string | undefined) {
 function tituloEmpresa(o: OrderWithNames): string {
   const base = o.cliente || `#${o.numero_pedido}`;
   return o.proyecto ? `${base} - ${o.proyecto}` : base;
-}
-
-/**
- * El tablero de "Asignadas" muestra una columna por cada repartidor de esta
- * lista. El match es por el inicio del nombre, sin distinguir mayúsculas ni
- * tildes. Para mostrarlos a todos automáticamente, dejar la lista vacía: `[]`.
- */
-const REPARTIDORES_TABLERO = ["carlos", "albert", "daniel"];
-
-function repartidorVisible(nombre: string | undefined): boolean {
-  if (REPARTIDORES_TABLERO.length === 0) return true;
-  const n = (nombre ?? "").toLowerCase();
-  return REPARTIDORES_TABLERO.some((r) => n.startsWith(r));
 }
 
 const SELECT =
@@ -344,14 +332,9 @@ function Column({
   // empresa las órdenes conservan el orden por fecha que ya traía la
   // consulta — no hace falta un criterio de desempate aparte. Sin empresa
   // (caso raro) va al final, no al principio.
-  const porEmpresa = (a: OrderWithNames, b: OrderWithNames) => {
-    const na = (a.cliente ?? "").trim();
-    const nb = (b.cliente ?? "").trim();
-    if (!na && nb) return 1;
-    if (na && !nb) return -1;
-    return na.localeCompare(nb, "es", { sensitivity: "base" });
-  };
-  const ordenadas = [...orders].sort(porEmpresa);
+  // El criterio de orden vive en lib/tablero.ts, compartido con los botones
+  // Anterior/Siguiente de la ficha para que navegar siga lo que se ve acá.
+  const ordenadas = ordenarColumna(orders, separarNoRecogidos);
 
   // Una orden que volvió por "no se recogió" necesita una acción distinta a
   // una orden nueva (llamar al proveedor vs. asignar repartidor), así que va
@@ -422,9 +405,7 @@ function ColumnasAsignadas({
   repartidores: Profile[];
   detallado: boolean;
 }) {
-  const visibles = repartidores
-    .filter((r) => repartidorVisible(r.full_name))
-    .sort((a, b) => a.full_name.localeCompare(b.full_name, "es", { sensitivity: "base" }));
+  const visibles = columnasDeRepartidor(repartidores);
 
   // Sin lista (o nadie coincide): se vuelve al comportamiento de una sola
   // columna con todas las asignadas, para no ocultar órdenes por accidente.

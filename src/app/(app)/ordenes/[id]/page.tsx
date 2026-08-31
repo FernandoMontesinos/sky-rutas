@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { Download, GitBranch } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { fechaHoraCorta } from "@/lib/fecha";
+import { ymdLima } from "@/lib/reportes";
+import { secuenciaRepartidor, secuenciaTablero } from "@/lib/tablero";
 import { createClient } from "@/lib/supabase/server";
 import { ModalidadBadge, StatusBadge, TypeBadge } from "@/components/badges";
 import { ImageGallery } from "@/components/image-gallery";
@@ -101,21 +103,47 @@ export default async function OrdenDetallePage({
     .order("created_at", { ascending: false });
   const eventos = (eventosData ?? []) as unknown as OrderEvent[];
 
-  // Navegación anterior/siguiente entre órdenes activas, para recorrerlas sin
-  // volver al tablero. Mismo orden que el tablero (las más nuevas primero) y,
-  // para el repartidor, solo las suyas. Si esta orden ya no está activa (p. ej.
-  // ya completada), no tiene vecinos y los botones no se muestran.
+  // Navegación anterior/siguiente, para recorrer las órdenes sin volver al
+  // tablero. Sigue EL MISMO orden en que se leen en pantalla —sección, columna
+  // y posición dentro de la columna— usando la secuencia compartida de
+  // lib/tablero.ts. Antes iba por fecha de subida y "Siguiente" saltaba a una
+  // orden que estaba en otra columna del tablero.
+  //
+  // Se incluyen las completadas de hoy porque el tablero también las muestra
+  // (es su rango por defecto); si esta orden no está en la vista, simplemente
+  // no hay vecinos y los botones no aparecen.
   let navQuery = supabase
     .from("orders")
-    .select("id")
-    .in("estado", ["pendiente", "asignado", "en_transito"])
-    .order("created_at", { ascending: false });
+    .select(SELECT)
+    .or(
+      `estado.in.(pendiente,asignado,en_transito),and(estado.eq.completado,completed_at.gte.${ymdLima(new Date())}T00:00:00-05:00)`
+    );
   if (isRepartidor) navQuery = navQuery.eq("assigned_to", userId);
   const { data: navData } = await navQuery;
-  const navIds = (navData ?? []).map((o) => o.id as string);
-  const navIdx = navIds.indexOf(order.id);
-  const prevId = navIdx > 0 ? navIds[navIdx - 1] : null;
-  const nextId = navIdx >= 0 && navIdx < navIds.length - 1 ? navIds[navIdx + 1] : null;
+  const navOrders = (navData ?? []) as unknown as OrderWithNames[];
+
+  // Los repartidores hacen falta para dos cosas: armar el orden de las
+  // columnas "Asignadas" (la navegación) y llenar el selector de asignar.
+  // Se consultan una sola vez para no repetir el viaje a la base.
+  const repartidores = isRepartidor
+    ? []
+    : (((
+        await supabase
+          .from("profiles")
+          .select("*")
+          .eq("role", "repartidor")
+          .eq("activo", true)
+          .order("full_name")
+      ).data ?? []) as Profile[]);
+
+  const secuencia = isRepartidor
+    ? secuenciaRepartidor(navOrders)
+    : secuenciaTablero(navOrders, repartidores);
+
+  const navIdx = secuencia.findIndex((o) => o.id === order.id);
+  const prevId = navIdx > 0 ? secuencia[navIdx - 1].id : null;
+  const nextId =
+    navIdx >= 0 && navIdx < secuencia.length - 1 ? secuencia[navIdx + 1].id : null;
 
   // Ventas corrige datos solo mientras nadie la haya tomado: después ya se
   // usaron para despachar. Cualquier vendedor puede, no solo quien la creó.
@@ -133,17 +161,6 @@ export default async function OrdenDetallePage({
   // que después responde 403.
   const puedeDescargarGuias =
     profile.role === "admin" || isAlmacen || profile.role === "facturacion";
-
-  let repartidores: Profile[] = [];
-  if (canAssign) {
-    const { data: reps } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("role", "repartidor")
-      .eq("activo", true)
-      .order("full_name");
-    repartidores = (reps ?? []) as Profile[];
-  }
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5">
