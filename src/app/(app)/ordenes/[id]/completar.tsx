@@ -216,6 +216,8 @@ export function ConfirmarTransitoForm({ orderId, tipo }: { orderId: string; tipo
   const [numeroGuia, setNumeroGuia] = useState("");
   const [materialImages, setMaterialImages] = useState<PickedImage[]>([]);
   const [observaciones, setObservaciones] = useState("");
+  const [parcial, setParcial] = useState(false);
+  const [faltante, setFaltante] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
   const esEntrega = tipo === "entrega";
@@ -232,6 +234,10 @@ export function ConfirmarTransitoForm({ orderId, tipo }: { orderId: string; tipo
       setLocalError("Toma al menos una foto del material.");
       return;
     }
+    if (!esEntrega && parcial && faltante.trim().length === 0) {
+      setLocalError("Cuéntanos qué faltó recoger.");
+      return;
+    }
     setLocalError(null);
     const fd = new FormData();
     fd.set("order_id", orderId);
@@ -239,6 +245,9 @@ export function ConfirmarTransitoForm({ orderId, tipo }: { orderId: string; tipo
     if (esEntrega) {
       fd.set("numero_guia", numeroGuia.trim());
       guiaImages.forEach((img) => fd.append("guias", img.file));
+    } else {
+      fd.set("recojo_parcial", String(parcial));
+      if (parcial) fd.set("nota_faltante", faltante.trim());
     }
     materialImages.forEach((img) => fd.append("material", img.file));
     startTransition(() => action(fd));
@@ -293,6 +302,58 @@ export function ConfirmarTransitoForm({ orderId, tipo }: { orderId: string; tipo
         />
       </div>
 
+      {/* Solo en un Pedido (Proveedor): el repartidor recibe bultos y sí sabe
+          si le entregaron todo o solo parte, aunque no cuente ítems. Es un
+          aviso para almacén — el parcial definitivo y el pedido con lo que
+          falta los sigue haciendo almacén al cerrar. */}
+      {!esEntrega && (
+        <div>
+          <span className="mb-1 block text-xs font-medium text-gray-700">
+            ¿El proveedor te entregó todo?
+          </span>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setParcial(false)}
+              className={`rounded-lg border-2 py-2 text-sm font-semibold transition ${
+                !parcial
+                  ? "border-green-600 bg-green-600 text-white"
+                  : "border-gray-300 bg-white text-gray-700"
+              }`}
+            >
+              Completo
+            </button>
+            <button
+              type="button"
+              onClick={() => setParcial(true)}
+              className={`rounded-lg border-2 py-2 text-sm font-semibold transition ${
+                parcial
+                  ? "border-amber-500 bg-amber-500 text-white"
+                  : "border-gray-300 bg-white text-gray-700"
+              }`}
+            >
+              Faltó algo
+            </button>
+          </div>
+
+          {parcial && (
+            <div className="mt-2">
+              <label htmlFor="faltante_transito" className="mb-1 block text-xs font-medium text-gray-700">
+                ¿Qué faltó recoger?
+              </label>
+              <textarea
+                id="faltante_transito"
+                value={faltante}
+                onChange={(e) => setFaltante(e.target.value)}
+                rows={2}
+                placeholder="Ej. Faltaron 2 cajas de guantes; el proveedor las entrega el viernes"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       <div>
         <label htmlFor="obs_transito" className="mb-1 block text-xs font-medium text-gray-700">
           Observaciones (opcional)
@@ -318,7 +379,9 @@ export function ConfirmarTransitoForm({ orderId, tipo }: { orderId: string; tipo
         className="flex w-full items-center justify-center gap-2 rounded-lg bg-sky-700 py-3 font-semibold text-white transition hover:bg-sky-800 disabled:opacity-50"
       >
         <Truck className="h-5 w-5" />
-        {pending ? "Confirmando..." : `Confirmar ${accion}`}
+        {pending
+          ? "Confirmando..."
+          : `Confirmar ${accion}${!esEntrega && parcial ? " (faltó algo)" : ""}`}
       </button>
       <p className="text-center text-xs text-gray-600">
         La orden queda <strong>En Tránsito</strong> hasta que almacén la cierre.

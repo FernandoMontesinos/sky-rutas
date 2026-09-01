@@ -360,6 +360,12 @@ export async function marcarEnTransito(
   const orderId = String(formData.get("order_id") ?? "");
   const observaciones = String(formData.get("observaciones") ?? "").trim();
   const numeroGuiaInput = String(formData.get("numero_guia") ?? "").trim();
+  // Solo en un Pedido (Proveedor): el repartidor recibe bultos y sí sabe si el
+  // proveedor le entregó todo o solo parte, aunque no cuente ítems. Es un
+  // AVISO para almacén, no el cierre: quien decide el parcial definitivo (y
+  // genera el remanente) sigue siendo almacén al contar. Ver nota más abajo.
+  const recojoParcial = String(formData.get("recojo_parcial") ?? "") === "true";
+  const notaFaltante = String(formData.get("nota_faltante") ?? "").trim();
   const guias = formData.getAll("guias").filter((f): f is File => f instanceof File && f.size > 0);
   const material = formData.getAll("material").filter((f): f is File => f instanceof File && f.size > 0);
 
@@ -394,6 +400,8 @@ export async function marcarEnTransito(
     return { error: "Toma al menos una foto de la guía antes de confirmar." };
   if (!esEntrega && material.length === 0)
     return { error: "Toma al menos una foto del material antes de confirmar." };
+  if (!esEntrega && recojoParcial && !notaFaltante)
+    return { error: "Cuéntanos qué faltó recoger." };
 
   let guiaUrls = guiasPrevias;
   if (esEntrega && guias.length > 0) {
@@ -410,6 +418,18 @@ export async function marcarEnTransito(
   );
   if (matErr) return { error: "No se pudo subir la foto del material: " + matErr };
 
+  const marcaParcial = !esEntrega && recojoParcial;
+
+  // Lo que faltó se guarda en observaciones para que almacén lo lea en la
+  // ficha antes de contar. A propósito NO se crea acá el remanente ni se
+  // marca `entrega_parcial`: eso es el cierre, y lo hace almacén con
+  // completeOrder. Si se creara en los dos lados, una orden que el
+  // repartidor reporta parcial y almacén cierra parcial terminaría con dos
+  // remanentes por el mismo faltante.
+  const observacionFinal = [observaciones, marcaParcial ? `Faltó recoger: ${notaFaltante}` : ""]
+    .filter(Boolean)
+    .join(" · ");
+
   const { data: updated, error } = await supabase
     .from("orders")
     .update({
@@ -418,23 +438,30 @@ export async function marcarEnTransito(
       ...(esEntrega && numeroGuiaInput ? { numero_guia: numeroGuiaInput } : {}),
       estado: "en_transito",
       en_transito_at: new Date().toISOString(),
-      ...(observaciones ? { observaciones } : {}),
+      ...(observacionFinal ? { observaciones: observacionFinal } : {}),
     })
     .eq("id", orderId)
     .select("numero_pedido, cliente")
     .single();
   if (error) return { error: error.message };
 
-  await registrarEvento(supabase, orderId, "recogida");
+  await registrarEvento(
+    supabase,
+    orderId,
+    marcaParcial ? "recogida_parcial" : "recogida",
+    marcaParcial ? notaFaltante : null
+  );
   if (observaciones) await registrarEvento(supabase, orderId, "observacion", observaciones);
 
   const almacenIds = await userIdsByRole("almacen");
   await notify(almacenIds, {
     tipo: "orden_en_transito",
-    titulo: "Material recogido — falta verificar",
-    mensaje: `#${updated.numero_pedido}${
-      updated.cliente ? " · " + updated.cliente : ""
-    } — cuenten los ítems para cerrarla.`,
+    titulo: marcaParcial
+      ? "Material recogido PARCIAL — falta verificar"
+      : "Material recogido — falta verificar",
+    mensaje: `#${updated.numero_pedido}${updated.cliente ? " · " + updated.cliente : ""} — ${
+      marcaParcial ? `faltó: ${notaFaltante}` : "cuenten los ítems para cerrarla."
+    }`,
     orderId,
   });
 
