@@ -375,7 +375,10 @@ export function ConfirmarTransitoForm({ orderId, tipo }: { orderId: string; tipo
       <button
         type="button"
         onClick={confirmar}
-        disabled={pending || materialImages.length === 0 || (esEntrega && guiaImages.length === 0)}
+        // Una sola evidencia obligatoria por tipo, igual que la validación de
+        // arriba y que marcarEnTransito: en una Cotización basta la guía (el
+        // material es opcional); en un Pedido, la foto del material.
+        disabled={pending || (esEntrega ? guiaImages.length === 0 : materialImages.length === 0)}
         className="flex w-full items-center justify-center gap-2 rounded-lg bg-sky-700 py-3 font-semibold text-white transition hover:bg-sky-800 disabled:opacity-50"
       >
         <Truck className="h-5 w-5" />
