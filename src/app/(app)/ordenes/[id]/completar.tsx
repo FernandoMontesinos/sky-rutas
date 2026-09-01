@@ -332,7 +332,7 @@ export function ConfirmarTransitoForm({ orderId, tipo }: { orderId: string; tipo
                   : "border-gray-300 bg-white text-gray-700"
               }`}
             >
-              Faltó algo
+              Parcial
             </button>
           </div>
 
@@ -381,7 +381,7 @@ export function ConfirmarTransitoForm({ orderId, tipo }: { orderId: string; tipo
         <Truck className="h-5 w-5" />
         {pending
           ? "Confirmando..."
-          : `Confirmar ${accion}${!esEntrega && parcial ? " (faltó algo)" : ""}`}
+          : `Confirmar ${accion}${!esEntrega && parcial ? " (parcial)" : ""}`}
       </button>
       <p className="text-center text-xs text-gray-600">
         La orden queda <strong>En Tránsito</strong> hasta que almacén la cierre.
